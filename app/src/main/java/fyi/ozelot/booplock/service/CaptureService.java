@@ -44,6 +44,7 @@ import fyi.ozelot.booplock.data.AttemptRecord;
 import fyi.ozelot.booplock.data.AttemptStorage;
 import fyi.ozelot.booplock.data.Prefs;
 import fyi.ozelot.booplock.debug.DebugLog;
+import fyi.ozelot.booplock.email.EmailAttemptMailer;
 import fyi.ozelot.booplock.notify.NotificationHelper;
 
 /**
@@ -590,6 +591,17 @@ public class CaptureService extends Service {
         }
         prefs.resetCurrentCycle();
 
+        if (prefs.isEmailEnabled()) {
+            DebugLog.i(this, "CaptureService: sending attempt email");
+            Context appContext = getApplicationContext();
+            EmailAttemptMailer.sendAttemptAsync(appContext, rec, result -> {
+                if (result.success) {
+                    DebugLog.i(appContext, "CaptureService: email sent: " + result.message);
+                } else {
+                    DebugLog.w(appContext, "CaptureService: email failed: " + result.message);
+                }
+            });
+        }
         stopAndCleanup();
     }
 

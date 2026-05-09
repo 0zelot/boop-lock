@@ -7,7 +7,7 @@ import androidx.preference.PreferenceManager;
 
 /**
  * Thin wrapper over SharedPreferences. Holds:
- *   - user settings (threshold, video recording, notifications),
+ *   - user settings (threshold, video recording, email, notifications),
  *   - transient state of the current cycle (error counter, whether photo was taken).
  *
  * Keys prefixed "pref_*" are shared with preferences.xml (PreferenceFragmentCompat),
@@ -28,6 +28,13 @@ public class Prefs {
     public static final String KEY_THRESHOLD = "pref_threshold";
     public static final String KEY_VIDEO_ENABLED = "pref_video_enabled";
     public static final String KEY_NOTIFICATIONS_ENABLED = "pref_notifications_enabled";
+    public static final String KEY_EMAIL_ENABLED = "pref_email_enabled";
+    public static final String KEY_EMAIL_SMTP_HOST = "pref_email_smtp_host";
+    public static final String KEY_EMAIL_SMTP_PORT = "pref_email_smtp_port";
+    public static final String KEY_EMAIL_FROM = "pref_email_from";
+    public static final String KEY_EMAIL_PASSWORD = "pref_email_password";
+    public static final String KEY_EMAIL_TO = "pref_email_to";
+    public static final String KEY_EMAIL_TEST = "pref_email_test";
 
     private static final String KEY_CYCLE_FAILED_COUNT = "cycle_failed_count";
     private static final String KEY_CYCLE_CAPTURE_TRIGGERED = "cycle_capture_triggered";
@@ -40,6 +47,7 @@ public class Prefs {
     private static final String KEY_UNSEEN_ALERT_RECORD  = "unseen_alert_record";
 
     private static final int DEFAULT_THRESHOLD = 1;
+    private static final int DEFAULT_SMTP_PORT = 587;
 
     private final SharedPreferences sp;
 
@@ -81,6 +89,39 @@ public class Prefs {
 
     public boolean isVideoEnabled() {
         return sp.getBoolean(KEY_VIDEO_ENABLED, true);
+    }
+
+    public boolean isEmailEnabled() {
+        return sp.getBoolean(KEY_EMAIL_ENABLED, false);
+    }
+
+    public String getEmailSmtpHost() {
+        return clean(sp.getString(KEY_EMAIL_SMTP_HOST, ""));
+    }
+
+    public int getEmailSmtpPort() {
+        String raw = clean(sp.getString(KEY_EMAIL_SMTP_PORT, String.valueOf(DEFAULT_SMTP_PORT)));
+        try {
+            int port = Integer.parseInt(raw);
+            if (port > 0 && port <= 65535) return port;
+        } catch (NumberFormatException ignored) { /* fall-through */ }
+        return DEFAULT_SMTP_PORT;
+    }
+
+    public String getEmailFrom() {
+        return clean(sp.getString(KEY_EMAIL_FROM, ""));
+    }
+
+    public String getEmailPassword() {
+        return sp.getString(KEY_EMAIL_PASSWORD, "");
+    }
+
+    public String getEmailTo() {
+        return clean(sp.getString(KEY_EMAIL_TO, ""));
+    }
+
+    private static String clean(String value) {
+        return value == null ? "" : value.trim();
     }
 
     // --- Current cycle state ---

@@ -73,12 +73,28 @@
     <!-- Preferences -->
     <string name="pref_cat_detection">Detection</string>
     <string name="pref_cat_notifications">Notifications</string>
+    <string name="pref_cat_email">Email</string>
     <string name="pref_cat_admin">Device administrator</string>
     <string name="pref_threshold_title">Failed attempt count</string>
     <string name="pref_video_title">Record video</string>
     <string name="pref_video_summary">Capture a 10-second video with microphone audio after photos are taken.</string>
     <string name="pref_notifications_title">Push notifications</string>
     <string name="pref_notifications_summary">Show alert after successful unlock if an attempt was detected.</string>
+    <string name="pref_email_enabled_title">Send email</string>
+    <string name="pref_email_enabled_summary">Send captured photos and video through SMTP after an attempt is saved.</string>
+    <string name="pref_email_smtp_host_title">SMTP server</string>
+    <string name="pref_email_smtp_port_title">SMTP port</string>
+    <string name="pref_email_from_title">Sender email</string>
+    <string name="pref_email_password_title">Sender password</string>
+    <string name="pref_email_password_empty">Not configured</string>
+    <string name="pref_email_password_set">Configured</string>
+    <string name="pref_email_to_title">Recipient email</string>
+    <string name="pref_email_test_title">Send test email</string>
+    <string name="pref_email_test_summary">Send a small test message with the current SMTP settings.</string>
+    <string name="pref_email_test_sending">Sending...</string>
+    <string name="email_test_success_title">Test email sent</string>
+    <string name="email_test_error_title">Test email failed</string>
+    <string name="email_settings_incomplete">Complete SMTP server, port, sender email, sender password, and recipient email first.</string>
     <string name="pref_admin_title">Open administrator settings</string>
     <string name="pref_admin_summary">Enable or disable BoopLock as device administrator.</string>
 </resources>

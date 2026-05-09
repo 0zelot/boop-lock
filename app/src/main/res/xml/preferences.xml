@@ -29,6 +29,46 @@
     </PreferenceCategory>
 
     <PreferenceCategory
+        android:title="@string/pref_cat_email">
+
+        <SwitchPreferenceCompat
+            android:key="pref_email_enabled"
+            android:title="@string/pref_email_enabled_title"
+            android:summary="@string/pref_email_enabled_summary"
+            android:defaultValue="false" />
+
+        <EditTextPreference
+            android:key="pref_email_smtp_host"
+            android:title="@string/pref_email_smtp_host_title"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            android:key="pref_email_smtp_port"
+            android:title="@string/pref_email_smtp_port_title"
+            android:defaultValue="587"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            android:key="pref_email_from"
+            android:title="@string/pref_email_from_title"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            android:key="pref_email_password"
+            android:title="@string/pref_email_password_title" />
+
+        <EditTextPreference
+            android:key="pref_email_to"
+            android:title="@string/pref_email_to_title"
+            app:useSimpleSummaryProvider="true" />
+
+        <Preference
+            android:key="pref_email_test"
+            android:title="@string/pref_email_test_title"
+            android:summary="@string/pref_email_test_summary" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
         android:title="@string/pref_cat_admin">
 
         <Preference

@@ -14,6 +14,9 @@
     <!-- Push notifications (Android 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Network access for optional SMTP delivery of captured media. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Required to listen for BOOT_COMPLETED in case the app needs
          to restore its state after a device reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
