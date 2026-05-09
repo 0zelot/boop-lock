@@ -36,11 +36,29 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/title_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/alert_title"
+                android:textAppearance="?attr/textAppearanceTitleSmall" />
+
+            <TextView
                 android:id="@+id/date_text"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textAppearance="?attr/textAppearanceTitleSmall"
-                tools:text="2026-05-09 14:32:11" />
+                android:layout_marginTop="4dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                tools:text="2026-05-09" />
+
+            <TextView
+                android:id="@+id/time_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                tools:text="14:32:11" />
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

@@ -43,7 +43,9 @@ public class AttemptAdapter extends RecyclerView.Adapter<AttemptAdapter.VH> {
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     private static final SimpleDateFormat DATE_FMT =
-            new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+    private static final SimpleDateFormat TIME_FMT =
+            new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
 
     public AttemptAdapter(OnRecordClick listener) {
         this.clickListener = listener;
@@ -83,17 +85,21 @@ public class AttemptAdapter extends RecyclerView.Adapter<AttemptAdapter.VH> {
     class VH extends RecyclerView.ViewHolder {
         final ImageView thumb;
         final TextView dateText;
+        final TextView timeText;
         long currentId = -1;
 
         VH(@NonNull View itemView) {
             super(itemView);
             thumb = itemView.findViewById(R.id.thumb);
             dateText = itemView.findViewById(R.id.date_text);
+            timeText = itemView.findViewById(R.id.time_text);
         }
 
         void bind(AttemptRecord r) {
             currentId = r.id;
-            dateText.setText(DATE_FMT.format(new Date(r.timestampMs)));
+            Date d = new Date(r.timestampMs);
+            dateText.setText(DATE_FMT.format(d));
+            timeText.setText(TIME_FMT.format(d));
             thumb.setImageResource(R.drawable.ic_thumb_placeholder);
             itemView.setOnClickListener(v -> {
                 if (clickListener != null) clickListener.onClick(r);
