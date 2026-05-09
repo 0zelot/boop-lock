@@ -7,7 +7,7 @@ import androidx.preference.PreferenceManager;
 
 /**
  * Thin wrapper over SharedPreferences. Holds:
- *   - user settings (threshold, notifications),
+ *   - user settings (threshold, video recording, notifications),
  *   - transient state of the current cycle (error counter, whether photo was taken).
  *
  * Keys prefixed "pref_*" are shared with preferences.xml (PreferenceFragmentCompat),
@@ -26,6 +26,7 @@ import androidx.preference.PreferenceManager;
 public class Prefs {
 
     public static final String KEY_THRESHOLD = "pref_threshold";
+    public static final String KEY_VIDEO_ENABLED = "pref_video_enabled";
     public static final String KEY_NOTIFICATIONS_ENABLED = "pref_notifications_enabled";
 
     private static final String KEY_CYCLE_FAILED_COUNT = "cycle_failed_count";
@@ -76,6 +77,10 @@ public class Prefs {
 
     public boolean areNotificationsEnabled() {
         return sp.getBoolean(KEY_NOTIFICATIONS_ENABLED, true);
+    }
+
+    public boolean isVideoEnabled() {
+        return sp.getBoolean(KEY_VIDEO_ENABLED, true);
     }
 
     // --- Current cycle state ---

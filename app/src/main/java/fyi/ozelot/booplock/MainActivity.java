@@ -220,7 +220,8 @@ public class MainActivity extends AppCompatActivity {
         boolean cameraGranted = ContextCompat.checkSelfPermission(this,
                 Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
 
-        boolean audioGranted = ContextCompat.checkSelfPermission(this,
+        boolean videoEnabled = Prefs.get(this).isVideoEnabled();
+        boolean audioGranted = !videoEnabled || ContextCompat.checkSelfPermission(this,
                 Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
 
         boolean notificationsGranted = true;

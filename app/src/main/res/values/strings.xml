@@ -75,6 +75,8 @@
     <string name="pref_cat_notifications">Notifications</string>
     <string name="pref_cat_admin">Device administrator</string>
     <string name="pref_threshold_title">Failed attempt count</string>
+    <string name="pref_video_title">Record video</string>
+    <string name="pref_video_summary">Capture a 10-second video with microphone audio after photos are taken.</string>
     <string name="pref_notifications_title">Push notifications</string>
     <string name="pref_notifications_summary">Show alert after successful unlock if an attempt was detected.</string>
     <string name="pref_admin_title">Open administrator settings</string>

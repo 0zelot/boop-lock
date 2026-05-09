@@ -77,6 +77,11 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
 
+            SwitchPreferenceCompat video = findPreference(Prefs.KEY_VIDEO_ENABLED);
+            if (video != null) {
+                video.setDefaultValue(true);
+            }
+
             SwitchPreferenceCompat notifs = findPreference(Prefs.KEY_NOTIFICATIONS_ENABLED);
             if (notifs != null) {
                 notifs.setDefaultValue(true);

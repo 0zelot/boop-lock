@@ -358,6 +358,11 @@ public class CaptureService extends Service {
     private void startVideoCapture() {
         if (finalized) return;
 
+        if (!Prefs.get(this).isVideoEnabled()) {
+            DebugLog.i(this, "CaptureService: video disabled in settings - skipping");
+            finalizeCapture();
+            return;
+        }
         if (!hasAudioPermission()) {
             DebugLog.w(this, "CaptureService: RECORD_AUDIO permission missing - skipping video");
             finalizeCapture();

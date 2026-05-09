@@ -10,6 +10,12 @@
             android:title="@string/pref_threshold_title"
             android:defaultValue="1"
             app:useSimpleSummaryProvider="false" />
+
+        <SwitchPreferenceCompat
+            android:key="pref_video_enabled"
+            android:title="@string/pref_video_title"
+            android:summary="@string/pref_video_summary"
+            android:defaultValue="true" />
     </PreferenceCategory>
 
     <PreferenceCategory
