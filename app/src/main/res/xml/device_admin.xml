@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Device Admin policies required to listen for
+     onPasswordFailed/onPasswordSucceeded events.
+     watch-login + watch-login-failure is the absolute minimum
+     that grants visibility into failed authentication attempts. -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android"
+    android:visible="true">
+    <uses-policies>
+        <watch-login />
+    </uses-policies>
+</device-admin>

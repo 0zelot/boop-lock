@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Camera: required for taking photos with the front camera. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Foreground service - required since Android P+. Type "camera" since Android 14. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
+    <!-- Push notifications (Android 13+). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Required to listen for BOOT_COMPLETED in case the app needs
+         to restore its state after a device reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Battery optimization exemption - critical on Samsung One UI, where the system
+         aggressively kills background processes and may block broadcast delivery. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- Hardware feature. -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.front"
+        android:required="false" />
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.BoopLock">
+
+        <!-- Main screen with a list of detected unlock attempts. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Debug screen for diagnostics. -->
+        <activity
+            android:name=".debug.DebugActivity"
+            android:exported="false"
+            android:label="Debug Log"
+            android:parentActivityName=".MainActivity" />
+
+        <!-- Settings screen. -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_title"
+            android:parentActivityName=".MainActivity" />
+
+        <!-- Fullscreen photo viewer for an attempt entry. -->
+        <activity
+            android:name=".PhotoViewActivity"
+            android:exported="false"
+            android:label="@string/photo_view_title"
+            android:parentActivityName=".MainActivity" />
+
+        <!-- Foreground service for taking a silent photo.
+             foregroundServiceType=camera is REQUIRED since Android 14
+             for services of this type to have camera access at all. -->
+        <service
+            android:name=".service.CaptureService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
+
+        <!-- DeviceAdminReceiver - the only public Android API that allows
+             listening to onPasswordFailed/onPasswordSucceeded events. -->
+        <receiver
+            android:name=".admin.LockAdminReceiver"
+            android:exported="true"
+            android:label="@string/device_admin_label"
+            android:description="@string/device_admin_description"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.ACTION_PASSWORD_FAILED" />
+                <action android:name="android.app.action.ACTION_PASSWORD_SUCCEEDED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Receiver for ACTION_USER_PRESENT - fired when the user
+             successfully unlocks the device (including biometrics). -->
+        <receiver
+            android:name=".receiver.UnlockReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.USER_PRESENT" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Alarm failsafe: resets the cycle if CaptureService crashed
+             and USER_PRESENT did not reset the cycle in time. -->
+        <receiver
+            android:name=".receiver.FallbackResetReceiver"
+            android:exported="false" />
+
+    </application>
+
+</manifest>
