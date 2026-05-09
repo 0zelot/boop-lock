@@ -16,6 +16,12 @@
             android:title="@string/pref_video_title"
             android:summary="@string/pref_video_summary"
             android:defaultValue="true" />
+
+        <SwitchPreferenceCompat
+            android:key="pref_location_enabled"
+            android:title="@string/pref_location_title"
+            android:summary="@string/pref_location_summary"
+            android:defaultValue="false" />
     </PreferenceCategory>
 
     <PreferenceCategory

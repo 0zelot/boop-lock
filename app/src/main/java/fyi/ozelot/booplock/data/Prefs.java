@@ -7,7 +7,7 @@ import androidx.preference.PreferenceManager;
 
 /**
  * Thin wrapper over SharedPreferences. Holds:
- *   - user settings (threshold, video recording, email, notifications),
+ *   - user settings (threshold, video recording, location, email, notifications),
  *   - transient state of the current cycle (error counter, whether photo was taken).
  *
  * Keys prefixed "pref_*" are shared with preferences.xml (PreferenceFragmentCompat),
@@ -27,6 +27,7 @@ public class Prefs {
 
     public static final String KEY_THRESHOLD = "pref_threshold";
     public static final String KEY_VIDEO_ENABLED = "pref_video_enabled";
+    public static final String KEY_LOCATION_ENABLED = "pref_location_enabled";
     public static final String KEY_NOTIFICATIONS_ENABLED = "pref_notifications_enabled";
     public static final String KEY_EMAIL_ENABLED = "pref_email_enabled";
     public static final String KEY_EMAIL_SMTP_HOST = "pref_email_smtp_host";
@@ -89,6 +90,10 @@ public class Prefs {
 
     public boolean isVideoEnabled() {
         return sp.getBoolean(KEY_VIDEO_ENABLED, true);
+    }
+
+    public boolean isLocationEnabled() {
+        return sp.getBoolean(KEY_LOCATION_ENABLED, true);
     }
 
     public boolean isEmailEnabled() {

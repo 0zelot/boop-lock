@@ -95,7 +95,7 @@ public class PhotoViewActivity extends AppCompatActivity {
 
         pages = buildMediaPages(rec);
         if (pages.isEmpty()) {
-            meta.setText(DATE_FMT.format(new Date(rec.timestampMs)));
+            meta.setText(buildMetaText(-1));
             return;
         }
 
@@ -120,10 +120,26 @@ public class PhotoViewActivity extends AppCompatActivity {
     }
 
     private void updateMeta(int photoIndex) {
+        meta.setText(buildMetaText(photoIndex));
+    }
+
+    private String buildMetaText(int photoIndex) {
         String timestamp = DATE_FMT.format(new Date(rec.timestampMs));
         int total = pages.size();
-        String page = total > 1 ? "  -  " + (photoIndex + 1) + " / " + total : "";
-        meta.setText(timestamp + page);
+        String page = total > 1 && photoIndex >= 0
+                ? "  -  " + (photoIndex + 1) + " / " + total
+                : "";
+        StringBuilder out = new StringBuilder(timestamp).append(page);
+        if (rec.hasLocation()) {
+            String locationText = rec.location.accuracyMeters >= 0
+                    ? getString(R.string.attempt_location_accuracy_fmt,
+                    rec.location.coordinates(), rec.location.accuracyMeters)
+                    : getString(R.string.attempt_location_fmt, rec.location.coordinates());
+            out.append('\n').append(locationText);
+            out.append('\n').append(getString(R.string.attempt_location_maps_fmt,
+                    rec.location.mapsUrl()));
+        }
+        return out.toString();
     }
 
     @Override

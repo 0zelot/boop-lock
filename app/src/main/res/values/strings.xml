@@ -25,6 +25,8 @@
     <string name="perm_btn_camera">Grant camera</string>
     <string name="perm_need_audio">Microphone permission is missing. Without it, the 10-second recording cannot include audio.</string>
     <string name="perm_btn_audio">Grant microphone</string>
+    <string name="perm_need_location">Location permission is missing. Without it, BoopLock cannot save location with attempts.</string>
+    <string name="perm_btn_location">Grant location</string>
     <string name="perm_need_notifications">Notification permission is missing. Without it, you will not see an alert about a detected attempt.</string>
     <string name="perm_btn_notifications">Grant notifications</string>
     <string name="error_admin_intent">Could not open the device administrator screen.</string>
@@ -69,6 +71,9 @@
     <string name="media_summary_with_video">%1$s + video</string>
     <string name="media_summary_video_only">Video</string>
     <string name="media_summary_empty">No media saved</string>
+    <string name="attempt_location_fmt">Location: %1$s</string>
+    <string name="attempt_location_accuracy_fmt">Location: %1$s (~%2$.0fm)</string>
+    <string name="attempt_location_maps_fmt">Maps: %1$s</string>
 
     <!-- Preferences -->
     <string name="pref_cat_detection">Detection</string>
@@ -78,6 +83,8 @@
     <string name="pref_threshold_title">Failed attempt count</string>
     <string name="pref_video_title">Record video</string>
     <string name="pref_video_summary">Capture a 10-second video with microphone audio after photos are taken.</string>
+    <string name="pref_location_title">Save location</string>
+    <string name="pref_location_summary">Attach last known device location to saved attempts and email alerts.</string>
     <string name="pref_notifications_title">Push notifications</string>
     <string name="pref_notifications_summary">Show alert after successful unlock if an attempt was detected.</string>
     <string name="pref_email_enabled_title">Send email</string>

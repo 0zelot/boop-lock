@@ -61,9 +61,15 @@ public class AttemptStorage {
 
     public synchronized AttemptRecord append(long timestampMs, int failedCount, List<String> photoPaths,
                                              String videoPath) {
+        return append(timestampMs, failedCount, photoPaths, videoPath, null);
+    }
+
+    public synchronized AttemptRecord append(long timestampMs, int failedCount, List<String> photoPaths,
+                                             String videoPath, AttemptLocation location) {
         List<AttemptRecord> list = readAll();
         long nextId = nextId(list);
-        AttemptRecord rec = new AttemptRecord(nextId, timestampMs, failedCount, photoPaths, videoPath);
+        AttemptRecord rec = new AttemptRecord(nextId, timestampMs, failedCount, photoPaths,
+                videoPath, location);
         list.add(rec);
         writeAll(list);
         return rec;

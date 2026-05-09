@@ -88,6 +88,7 @@ public class AttemptAdapter extends RecyclerView.Adapter<AttemptAdapter.VH> {
         final TextView dateText;
         final TextView timeText;
         final TextView mediaText;
+        final TextView locationText;
         long currentId = -1;
 
         VH(@NonNull View itemView) {
@@ -96,6 +97,7 @@ public class AttemptAdapter extends RecyclerView.Adapter<AttemptAdapter.VH> {
             dateText = itemView.findViewById(R.id.date_text);
             timeText = itemView.findViewById(R.id.time_text);
             mediaText = itemView.findViewById(R.id.media_text);
+            locationText = itemView.findViewById(R.id.location_text);
         }
 
         void bind(AttemptRecord r) {
@@ -104,6 +106,12 @@ public class AttemptAdapter extends RecyclerView.Adapter<AttemptAdapter.VH> {
             dateText.setText(DATE_FMT.format(d));
             timeText.setText(TIME_FMT.format(d));
             mediaText.setText(mediaSummary(itemView.getContext(), r));
+            if (r.hasLocation()) {
+                locationText.setText(r.location.coordinates());
+                locationText.setVisibility(View.VISIBLE);
+            } else {
+                locationText.setVisibility(View.GONE);
+            }
             thumb.setImageResource(R.drawable.ic_thumb_placeholder);
             itemView.setOnClickListener(v -> {
                 if (clickListener != null) clickListener.onClick(r);

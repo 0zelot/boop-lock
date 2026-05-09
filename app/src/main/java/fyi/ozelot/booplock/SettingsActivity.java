@@ -94,6 +94,11 @@ public class SettingsActivity extends AppCompatActivity {
                 video.setDefaultValue(true);
             }
 
+            SwitchPreferenceCompat location = findPreference(Prefs.KEY_LOCATION_ENABLED);
+            if (location != null) {
+                location.setDefaultValue(true);
+            }
+
             SwitchPreferenceCompat notifs = findPreference(Prefs.KEY_NOTIFICATIONS_ENABLED);
             if (notifs != null) {
                 notifs.setDefaultValue(true);

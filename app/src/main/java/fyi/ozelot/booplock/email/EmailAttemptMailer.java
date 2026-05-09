@@ -1,6 +1,8 @@
 package fyi.ozelot.booplock.email;
 
 import android.content.Context;
+import android.os.Build;
+import android.provider.Settings;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
@@ -46,13 +48,30 @@ public final class EmailAttemptMailer {
             List<EmailSender.Attachment> attachments = attachmentsFor(record);
             String timestamp = DATE_FMT.format(new Date(record.timestampMs));
             String subject = "BoopLock unlock attempt - " + timestamp;
-            String body = "BoopLock detected a failed unlock attempt.\n\n"
+            String body = "BoopLock detected a failed unlock attempt to your "
+                    + deviceName(app) + ".\n\n"
                     + "Time: " + timestamp + "\n"
-                    + "Failed attempt count: " + record.failedCount + "\n"
                     + "Photos: " + record.photoPaths.size() + "\n"
-                    + "Video: " + (record.hasVideo() ? "yes" : "no") + "\n";
+                    + "Video: " + (record.hasVideo() ? "yes" : "no") + "\n"
+                    + locationText(record);
             complete(callback, EmailSender.send(config, subject, body, attachments));
         });
+    }
+
+    /** Returns the user-visible device name (Bluetooth name if set, otherwise model name). */
+    private static String deviceName(Context ctx) {
+        String name = Settings.Global.getString(ctx.getContentResolver(), "device_name");
+        if (name != null && !name.trim().isEmpty()) return name.trim();
+        return Build.MODEL;
+    }
+
+    private static String locationText(AttemptRecord record) {
+        if (!record.hasLocation()) return "Location: unavailable\n";
+        String accuracy = record.location.accuracyMeters >= 0
+                ? " (~" + Math.round(record.location.accuracyMeters) + "m)"
+                : "";
+        return "Location: " + record.location.coordinates() + accuracy + "\n"
+                + "Maps: " + record.location.mapsUrl() + "\n";
     }
 
     private static List<EmailSender.Attachment> attachmentsFor(AttemptRecord record) {

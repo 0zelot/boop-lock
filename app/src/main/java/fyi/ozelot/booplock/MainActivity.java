@@ -38,6 +38,7 @@ import fyi.ozelot.booplock.admin.LockAdminReceiver;
 import fyi.ozelot.booplock.data.AttemptRecord;
 import fyi.ozelot.booplock.data.AttemptStorage;
 import fyi.ozelot.booplock.data.Prefs;
+import fyi.ozelot.booplock.location.LocationCapture;
 import fyi.ozelot.booplock.notify.NotificationHelper;
 import fyi.ozelot.booplock.ui.AttemptAdapter;
 
@@ -69,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
 
     private ActivityResultLauncher<String> requestCameraLauncher;
     private ActivityResultLauncher<String> requestAudioLauncher;
+    private ActivityResultLauncher<String[]> requestLocationLauncher;
     private ActivityResultLauncher<String> requestNotificationsLauncher;
     private ActivityResultLauncher<Intent> requestAdminLauncher;
     private ActivityResultLauncher<Intent> requestBatteryLauncher;
@@ -111,6 +113,10 @@ public class MainActivity extends AppCompatActivity {
         requestAudioLauncher = registerForActivityResult(
                 new ActivityResultContracts.RequestPermission(),
                 granted -> updatePermissionPanel());
+
+        requestLocationLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestMultiplePermissions(),
+                result -> updatePermissionPanel());
 
         requestNotificationsLauncher = registerForActivityResult(
                 new ActivityResultContracts.RequestPermission(),
@@ -224,6 +230,9 @@ public class MainActivity extends AppCompatActivity {
         boolean audioGranted = !videoEnabled || ContextCompat.checkSelfPermission(this,
                 Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
 
+        boolean locationEnabled = Prefs.get(this).isLocationEnabled();
+        boolean locationGranted = !locationEnabled || LocationCapture.hasLocationPermission(this);
+
         boolean notificationsGranted = true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notificationsGranted = ContextCompat.checkSelfPermission(this,
@@ -242,6 +251,12 @@ public class MainActivity extends AppCompatActivity {
         } else if (!audioGranted) {
             show(R.string.perm_need_audio, R.string.perm_btn_audio,
                     v -> requestAudioLauncher.launch(Manifest.permission.RECORD_AUDIO));
+        } else if (!locationGranted) {
+            show(R.string.perm_need_location, R.string.perm_btn_location,
+                    v -> requestLocationLauncher.launch(new String[] {
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                    }));
         } else if (!notificationsGranted) {
             show(R.string.perm_need_notifications, R.string.perm_btn_notifications,
                     v -> {

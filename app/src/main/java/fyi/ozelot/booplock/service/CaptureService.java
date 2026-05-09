@@ -41,10 +41,12 @@ import java.util.Collections;
 import java.util.List;
 
 import fyi.ozelot.booplock.data.AttemptRecord;
+import fyi.ozelot.booplock.data.AttemptLocation;
 import fyi.ozelot.booplock.data.AttemptStorage;
 import fyi.ozelot.booplock.data.Prefs;
 import fyi.ozelot.booplock.debug.DebugLog;
 import fyi.ozelot.booplock.email.EmailAttemptMailer;
+import fyi.ozelot.booplock.location.LocationCapture;
 import fyi.ozelot.booplock.notify.NotificationHelper;
 
 /**
@@ -149,10 +151,7 @@ public class CaptureService extends Service {
 
     private void startCaptureForeground() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                    NotificationHelper.NOTIF_SERVICE_ID,
-                    NotificationHelper.buildServiceNotification(this),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+            startForegroundWithTypes(foregroundServiceTypes(false));
         } else {
             startForeground(
                     NotificationHelper.NOTIF_SERVICE_ID,
@@ -168,15 +167,37 @@ public class CaptureService extends Service {
     private boolean tryStartMicrophoneForeground() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true;
         try {
-            startForeground(
-                    NotificationHelper.NOTIF_SERVICE_ID,
-                    NotificationHelper.buildServiceNotification(this),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-                            | ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+            startForegroundWithTypes(foregroundServiceTypes(true));
             return true;
         } catch (SecurityException | IllegalArgumentException e) {
             DebugLog.e(this, "CaptureService: cannot enable microphone FGS: " + e.getMessage());
             return false;
+        }
+    }
+
+    private int foregroundServiceTypes(boolean includeMicrophone) {
+        int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+        if (includeMicrophone) {
+            type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+        }
+        if (LocationCapture.canReadLocation(this)) {
+            type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+        }
+        return type;
+    }
+
+    private void startForegroundWithTypes(int types) {
+        try {
+            startForeground(
+                    NotificationHelper.NOTIF_SERVICE_ID,
+                    NotificationHelper.buildServiceNotification(this),
+                    types);
+        } catch (SecurityException | IllegalArgumentException e) {
+            DebugLog.w(this, "CaptureService: FGS type fallback: " + e.getMessage());
+            startForeground(
+                    NotificationHelper.NOTIF_SERVICE_ID,
+                    NotificationHelper.buildServiceNotification(this),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
         }
     }
 
@@ -564,7 +585,16 @@ public class CaptureService extends Service {
         DebugLog.i(this, "CaptureService: finalizing, total photos=" + photoPaths.size()
                 + " video=" + (videoPath != null));
 
-        AttemptRecord rec = storage.append(startTimestamp, failedCount, photoPaths, videoPath);
+        AttemptLocation location = LocationCapture.captureWithTimeout(this, 5000);
+        if (location != null) {
+            DebugLog.i(this, "CaptureService: location=" + location.coordinates()
+                    + " provider=" + location.provider);
+        } else if (Prefs.get(this).isLocationEnabled()) {
+            DebugLog.w(this, "CaptureService: location enabled but unavailable after timeout");
+        }
+
+        AttemptRecord rec = storage.append(startTimestamp, failedCount, photoPaths,
+                videoPath, location);
 
         Prefs prefs = Prefs.get(this);
         prefs.setLastCyclePhotoPath(photoPaths.isEmpty() ? null : photoPaths.get(0));
