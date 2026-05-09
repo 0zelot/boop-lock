@@ -40,8 +40,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import fyi.ozelot.booplock.data.AttemptRecord;
 import fyi.ozelot.booplock.data.AttemptLocation;
+import fyi.ozelot.booplock.data.AttemptRecord;
 import fyi.ozelot.booplock.data.AttemptStorage;
 import fyi.ozelot.booplock.data.Prefs;
 import fyi.ozelot.booplock.debug.DebugLog;
@@ -50,25 +50,22 @@ import fyi.ozelot.booplock.location.LocationCapture;
 import fyi.ozelot.booplock.notify.NotificationHelper;
 
 /**
- * Foreground service that takes 3 photos from the front camera and 3 photos from the
- * rear camera (6 total), with a 2-second pause between shots on each camera.
+ * Foreground service that captures photos and (optionally) video after a failed unlock attempt.
  *
- * Capture sequence: FRONT phase (shots 0-2) → REAR phase (shots 0-2) → finalize.
- * If a camera is unavailable or errors out, that phase is skipped gracefully and
- * finalization proceeds with whatever photos were already saved.
+ * Capture sequence when video is enabled:
+ *   1. Front photos  (camera 1, ~6 s)                           ← photoThread
+ *   2. After front photos: Rear photos (camera 0) starts        ← photoThread
+ *      simultaneously with Video (camera 1, 10 s)              ← videoThread
+ *   Finalization waits for both rear photos and video to complete.
+ *
+ * When video is disabled:
+ *   Front photos → Rear photos → finalize (sequential, single thread).
  *
  * Why Camera2 instead of CameraX/Intent:
  *   - CameraX requires a LifecycleOwner (activity/fragment) — no UI here.
  *   - ACTION_IMAGE_CAPTURE would open the camera for the user — the opposite of what we want.
  *   - Camera2 + ImageReader allows capturing without an on-screen Surface,
  *     everything runs on a background thread.
- *
- * Android constraints:
- *   - Since Android 14, a "camera" foreground service requires the
- *     FOREGROUND_SERVICE_CAMERA permission and the appropriate manifest declaration.
- *   - Since Android 12, "background-to-foreground service start" restrictions apply.
- *     Triggering from DeviceAdminReceiver is usually considered privileged,
- *     but under extreme conditions (e.g. battery saver) the system may refuse to start.
  */
 public class CaptureService extends Service {
 
@@ -82,30 +79,41 @@ public class CaptureService extends Service {
 
     private enum Phase { FRONT, REAR }
 
-    private HandlerThread cameraThread;
-    private Handler cameraHandler;
-
-    private CameraDevice cameraDevice;
-    private CameraCaptureSession captureSession;
+    // --- Photo camera (front stills, and rear stills when video is disabled) ---
+    private HandlerThread photoThread;
+    private Handler photoHandler;
+    private CameraDevice photoCameraDevice;
+    private CameraCaptureSession photoSession;
     private ImageReader imageReader;
-    private MediaRecorder mediaRecorder;
-    private File pendingVideoFile;
     private CameraCharacteristics currentCameraCharacteristics;
     private boolean currentCameraFront;
-
     private Phase currentPhase;
     private int shotsTaken;
+
+    // --- Video camera (rear, runs in parallel with front photos when video is enabled) ---
+    private HandlerThread videoThread;
+    private Handler videoHandler;
+    private CameraDevice videoCameraDevice;
+    private CameraCaptureSession videoSession;
+    private MediaRecorder mediaRecorder;
+    private File pendingVideoFile;
+
+    // --- Shared state ---
     private final List<String> photoPaths = new ArrayList<>();
     private String videoPath;
-
     private int failedCount;
     private long startTimestamp;
-    private boolean finalized;
-    private boolean stopped;
-    private boolean videoRecording;
-    private boolean stoppingVideo;
-
     private AttemptStorage storage;
+
+    // volatile so cross-thread visibility is guaranteed when the other thread reads them.
+    private volatile boolean photoDone = false;
+    private volatile boolean videoDone  = false;
+
+    private boolean finalized    = false; // guarded by synchronized(this)
+    private boolean stopped      = false;
+    private boolean videoRecording = false;
+    private boolean stoppingVideo  = false;
+    private boolean runVideoParallel = false;
 
     @Nullable
     @Override
@@ -134,20 +142,44 @@ public class CaptureService extends Service {
         currentPhase = Phase.FRONT;
         shotsTaken = 0;
 
-        cameraThread = new HandlerThread("BoopLockCameraThread");
-        cameraThread.start();
-        cameraHandler = new Handler(cameraThread.getLooper());
+        boolean videoEnabled = Prefs.get(this).isVideoEnabled();
+        boolean audioOk = hasAudioPermission();
+        runVideoParallel = videoEnabled && audioOk;
 
-        cameraHandler.post(this::openCurrentCamera);
+        // Video is marked done until the FRONT→REAR transition actually starts it.
+        // This prevents finalizeCapture() from waiting for video that hasn't started yet.
+        videoDone = true;
 
-        cameraHandler.postDelayed(() -> {
+        // Photo thread — always present.
+        photoThread = new HandlerThread("BoopLockPhotoThread");
+        photoThread.start();
+        photoHandler = new Handler(photoThread.getLooper());
+        photoHandler.post(this::openCurrentCamera);
+
+        if (runVideoParallel) {
+            // Prepare a dedicated video thread. Video will be posted to it once front
+            // photos are done (in advancePhaseOrFinalize), so it runs in parallel with
+            // rear photos on the now-free front camera.
+            videoThread = new HandlerThread("BoopLockVideoThread");
+            videoThread.start();
+            videoHandler = new Handler(videoThread.getLooper());
+        }
+
+        // Safety timeout — force finalization after 60 s regardless.
+        photoHandler.postDelayed(() -> {
             DebugLog.e(this, "CaptureService: TIMEOUT 60s - finalizing with "
                     + photoPaths.size() + " photos");
+            photoDone = true;
+            videoDone = true;
             finalizeCapture();
         }, TIMEOUT_MS);
 
         return START_NOT_STICKY;
     }
+
+    // =========================================================================
+    // Foreground service helpers
+    // =========================================================================
 
     private void startCaptureForeground() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -201,6 +233,10 @@ public class CaptureService extends Service {
         }
     }
 
+    // =========================================================================
+    // Photo capture — runs on photoThread
+    // =========================================================================
+
     @SuppressWarnings("MissingPermission")
     private void openCurrentCamera() {
         CameraManager cm = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
@@ -228,7 +264,7 @@ public class CaptureService extends Service {
 
             imageReader = ImageReader.newInstance(
                     jpegSize.getWidth(), jpegSize.getHeight(), ImageFormat.JPEG, 2);
-            imageReader.setOnImageAvailableListener(this::onJpegAvailable, cameraHandler);
+            imageReader.setOnImageAvailableListener(this::onJpegAvailable, photoHandler);
 
             DebugLog.i(this, "CaptureService: opening " + currentPhase + " camera id=" + cameraId
                     + " size=" + jpegSize.getWidth() + "x" + jpegSize.getHeight());
@@ -236,7 +272,7 @@ public class CaptureService extends Service {
             cm.openCamera(cameraId, new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(@NonNull CameraDevice camera) {
-                    cameraDevice = camera;
+                    photoCameraDevice = camera;
                     createCaptureSession();
                 }
 
@@ -244,7 +280,7 @@ public class CaptureService extends Service {
                 public void onDisconnected(@NonNull CameraDevice camera) {
                     Log.w(TAG, "Camera disconnected");
                     camera.close();
-                    cameraDevice = null;
+                    photoCameraDevice = null;
                     handleCameraPhaseError("disconnected");
                 }
 
@@ -252,10 +288,10 @@ public class CaptureService extends Service {
                 public void onError(@NonNull CameraDevice camera, int error) {
                     Log.e(TAG, "Camera error: " + error);
                     camera.close();
-                    cameraDevice = null;
+                    photoCameraDevice = null;
                     handleCameraPhaseError("error " + error);
                 }
-            }, cameraHandler);
+            }, photoHandler);
         } catch (CameraAccessException | SecurityException e) {
             Log.e(TAG, "Cannot open camera", e);
             handleCameraPhaseError(e.getMessage());
@@ -264,12 +300,12 @@ public class CaptureService extends Service {
 
     private void createCaptureSession() {
         try {
-            cameraDevice.createCaptureSession(
+            photoCameraDevice.createCaptureSession(
                     Collections.singletonList(imageReader.getSurface()),
                     new CameraCaptureSession.StateCallback() {
                         @Override
                         public void onConfigured(@NonNull CameraCaptureSession session) {
-                            captureSession = session;
+                            photoSession = session;
                             captureStill();
                         }
 
@@ -278,7 +314,7 @@ public class CaptureService extends Service {
                             Log.e(TAG, "Capture session configure failed");
                             handleCameraPhaseError("configure failed");
                         }
-                    }, cameraHandler);
+                    }, photoHandler);
         } catch (CameraAccessException e) {
             Log.e(TAG, "createCaptureSession failed", e);
             handleCameraPhaseError(e.getMessage());
@@ -287,7 +323,7 @@ public class CaptureService extends Service {
 
     private void captureStill() {
         try {
-            CaptureRequest.Builder b = cameraDevice.createCaptureRequest(
+            CaptureRequest.Builder b = photoCameraDevice.createCaptureRequest(
                     CameraDevice.TEMPLATE_STILL_CAPTURE);
             b.addTarget(imageReader.getSurface());
             b.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
@@ -299,7 +335,7 @@ public class CaptureService extends Service {
                 b.set(CaptureRequest.JPEG_ORIENTATION,
                         outputOrientation(currentCameraCharacteristics, currentCameraFront));
             }
-            captureSession.capture(b.build(), null, cameraHandler);
+            photoSession.capture(b.build(), null, photoHandler);
         } catch (CameraAccessException e) {
             Log.e(TAG, "captureStill failed", e);
             handleCameraPhaseError(e.getMessage());
@@ -338,60 +374,78 @@ public class CaptureService extends Service {
         if (shotsTaken < SHOTS_PER_CAMERA) {
             DebugLog.i(this, "CaptureService: shot " + shotsTaken + "/" + SHOTS_PER_CAMERA
                     + " done for " + currentPhase + ", waiting " + SHOT_DELAY_MS + "ms");
-            cameraHandler.postDelayed(this::captureStill, SHOT_DELAY_MS);
+            photoHandler.postDelayed(this::captureStill, SHOT_DELAY_MS);
         } else {
             DebugLog.i(this, "CaptureService: all " + SHOTS_PER_CAMERA
                     + " shots done for " + currentPhase);
-            closeCameraResourcesThen(this::advancePhaseOrFinalize);
+            closePhotoCameraThen(this::advancePhaseOrFinalize);
         }
     }
 
-    /** Closes current camera resources synchronously, then posts {@code next} after a settle delay. */
-    private void closeCameraResourcesThen(Runnable next) {
+    private void closePhotoCameraThen(Runnable next) {
         try {
-            if (captureSession != null) { captureSession.close(); captureSession = null; }
-            if (cameraDevice != null) { cameraDevice.close(); cameraDevice = null; }
+            if (photoSession != null) { photoSession.close(); photoSession = null; }
+            if (photoCameraDevice != null) { photoCameraDevice.close(); photoCameraDevice = null; }
             if (imageReader != null) { imageReader.close(); imageReader = null; }
         } catch (Throwable t) {
-            Log.w(TAG, "closeCameraResources", t);
+            Log.w(TAG, "closePhotoCameraResources", t);
         }
-        cameraHandler.postDelayed(next, 500);
+        photoHandler.postDelayed(next, 500);
     }
 
     private void advancePhaseOrFinalize() {
-        if (finalized) return;
+        if (finalized || photoDone) return;
         if (currentPhase == Phase.FRONT) {
             currentPhase = Phase.REAR;
             shotsTaken = 0;
             DebugLog.i(this, "CaptureService: switching to REAR camera");
+
+            if (runVideoParallel) {
+                // Front camera is now free. Start video on it in parallel with rear photos.
+                videoDone = false;
+                videoHandler.post(this::startVideoCapture);
+                DebugLog.i(this, "CaptureService: video started in parallel with rear photos");
+            }
+
             openCurrentCamera();
         } else {
-            startVideoCapture();
+            DebugLog.i(this, "CaptureService: all " + (SHOTS_PER_CAMERA * 2) + " photos done");
+            photoDone = true;
+            finalizeCapture();
         }
     }
 
     private void handleCameraPhaseError(String reason) {
         DebugLog.w(this, "CaptureService: " + currentPhase + " camera error: " + reason
                 + ", photos so far: " + photoPaths.size());
-        closeCameraResourcesThen(this::advancePhaseOrFinalize);
+        closePhotoCameraThen(this::advancePhaseOrFinalize);
     }
+
+    // =========================================================================
+    // Video capture — runs on videoThread (parallel) or photoThread (sequential)
+    // =========================================================================
 
     @SuppressWarnings("MissingPermission")
     private void startVideoCapture() {
-        if (finalized) return;
-
+        if (finalized) {
+            videoDone = true;
+            return;
+        }
         if (!Prefs.get(this).isVideoEnabled()) {
             DebugLog.i(this, "CaptureService: video disabled in settings - skipping");
+            videoDone = true;
             finalizeCapture();
             return;
         }
         if (!hasAudioPermission()) {
             DebugLog.w(this, "CaptureService: RECORD_AUDIO permission missing - skipping video");
+            videoDone = true;
             finalizeCapture();
             return;
         }
         if (!tryStartMicrophoneForeground()) {
             DebugLog.w(this, "CaptureService: microphone foreground type unavailable - skipping video");
+            videoDone = true;
             finalizeCapture();
             return;
         }
@@ -403,6 +457,8 @@ public class CaptureService extends Service {
         }
 
         try {
+            // Front camera is free (front photos already done) — use it for video.
+            // Rear camera is busy taking rear still photos in parallel.
             String cameraId = findFrontCameraId(cm);
             boolean frontCamera = true;
             if (cameraId == null) {
@@ -411,6 +467,7 @@ public class CaptureService extends Service {
             }
             if (cameraId == null) {
                 DebugLog.w(this, "CaptureService: no camera available for video - skipping");
+                videoDone = true;
                 finalizeCapture();
                 return;
             }
@@ -426,10 +483,11 @@ public class CaptureService extends Service {
             DebugLog.i(this, "CaptureService: opening video camera id=" + cameraId
                     + " size=" + videoSize.getWidth() + "x" + videoSize.getHeight());
 
+            Handler callbackHandler = videoHandler != null ? videoHandler : photoHandler;
             cm.openCamera(cameraId, new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(@NonNull CameraDevice camera) {
-                    cameraDevice = camera;
+                    videoCameraDevice = camera;
                     createVideoCaptureSession();
                 }
 
@@ -437,7 +495,7 @@ public class CaptureService extends Service {
                 public void onDisconnected(@NonNull CameraDevice camera) {
                     Log.w(TAG, "Video camera disconnected");
                     camera.close();
-                    cameraDevice = null;
+                    videoCameraDevice = null;
                     handleVideoError("disconnected");
                 }
 
@@ -445,10 +503,10 @@ public class CaptureService extends Service {
                 public void onError(@NonNull CameraDevice camera, int error) {
                     Log.e(TAG, "Video camera error: " + error);
                     camera.close();
-                    cameraDevice = null;
+                    videoCameraDevice = null;
                     handleVideoError("error " + error);
                 }
-            }, cameraHandler);
+            }, callbackHandler);
         } catch (CameraAccessException | IOException | RuntimeException e) {
             Log.e(TAG, "Cannot start video capture", e);
             handleVideoError(e.getMessage());
@@ -478,12 +536,13 @@ public class CaptureService extends Service {
     private void createVideoCaptureSession() {
         try {
             Surface recorderSurface = mediaRecorder.getSurface();
-            cameraDevice.createCaptureSession(
+            Handler callbackHandler = videoHandler != null ? videoHandler : photoHandler;
+            videoCameraDevice.createCaptureSession(
                     Collections.singletonList(recorderSurface),
                     new CameraCaptureSession.StateCallback() {
                         @Override
                         public void onConfigured(@NonNull CameraCaptureSession session) {
-                            captureSession = session;
+                            videoSession = session;
                             startVideoRecording(recorderSurface);
                         }
 
@@ -492,7 +551,7 @@ public class CaptureService extends Service {
                             Log.e(TAG, "Video capture session configure failed");
                             handleVideoError("configure failed");
                         }
-                    }, cameraHandler);
+                    }, callbackHandler);
         } catch (CameraAccessException | RuntimeException e) {
             Log.e(TAG, "createVideoCaptureSession failed", e);
             handleVideoError(e.getMessage());
@@ -501,20 +560,21 @@ public class CaptureService extends Service {
 
     private void startVideoRecording(Surface recorderSurface) {
         try {
-            CaptureRequest.Builder b = cameraDevice.createCaptureRequest(
+            CaptureRequest.Builder b = videoCameraDevice.createCaptureRequest(
                     CameraDevice.TEMPLATE_RECORD);
             b.addTarget(recorderSurface);
             b.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
             b.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON);
             b.set(CaptureRequest.CONTROL_AF_MODE,
                     CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
-            captureSession.setRepeatingRequest(b.build(), null, cameraHandler);
+            videoSession.setRepeatingRequest(b.build(), null,
+                    videoHandler != null ? videoHandler : photoHandler);
 
             mediaRecorder.start();
             videoRecording = true;
-            DebugLog.i(this, "CaptureService: recording video for "
-                    + VIDEO_DURATION_MS + "ms");
-            cameraHandler.postDelayed(this::stopVideoCaptureAndFinalize, VIDEO_DURATION_MS);
+            DebugLog.i(this, "CaptureService: recording video for " + VIDEO_DURATION_MS + "ms");
+            Handler h = videoHandler != null ? videoHandler : photoHandler;
+            h.postDelayed(this::stopVideoCaptureAndFinalize, VIDEO_DURATION_MS);
         } catch (CameraAccessException | RuntimeException e) {
             Log.e(TAG, "startVideoRecording failed", e);
             handleVideoError(e.getMessage());
@@ -529,15 +589,14 @@ public class CaptureService extends Service {
         File completedFile = pendingVideoFile;
 
         try {
-            if (captureSession != null) {
+            if (videoSession != null) {
                 try {
-                    captureSession.stopRepeating();
-                    captureSession.abortCaptures();
+                    videoSession.stopRepeating();
+                    videoSession.abortCaptures();
                 } catch (CameraAccessException | IllegalStateException e) {
                     Log.w(TAG, "stop video repeating", e);
                 }
             }
-
             if (videoRecording && mediaRecorder != null) {
                 try {
                     mediaRecorder.stop();
@@ -554,16 +613,27 @@ public class CaptureService extends Service {
 
         if (saved) {
             videoPath = completedFile.getAbsolutePath();
-            DebugLog.i(this, "CaptureService: saved video size="
-                    + completedFile.length() + "B");
+            DebugLog.i(this, "CaptureService: saved video size=" + completedFile.length() + "B");
         } else {
             DebugLog.w(this, "CaptureService: video not saved");
         }
 
-        closeCameraResourcesThen(() -> {
+        closeVideoCameraThen(() -> {
             stoppingVideo = false;
+            videoDone = true;
             finalizeCapture();
         });
+    }
+
+    private void closeVideoCameraThen(Runnable next) {
+        try {
+            if (videoSession != null) { videoSession.close(); videoSession = null; }
+            if (videoCameraDevice != null) { videoCameraDevice.close(); videoCameraDevice = null; }
+        } catch (Throwable t) {
+            Log.w(TAG, "closeVideoCameraResources", t);
+        }
+        Handler h = videoHandler != null ? videoHandler : photoHandler;
+        h.postDelayed(next, 500);
     }
 
     private void handleVideoError(String reason) {
@@ -571,16 +641,24 @@ public class CaptureService extends Service {
                 + ", finalizing with photos only");
         videoRecording = false;
         releaseMediaRecorder(true);
-        closeCameraResourcesThen(this::finalizeCapture);
+        closeVideoCameraThen(() -> {
+            videoDone = true;
+            finalizeCapture();
+        });
     }
 
+    // =========================================================================
+    // Finalization — waits for both photo and video to complete
+    // =========================================================================
+
     private void finalizeCapture() {
-        if (finalized) return;
-        if (videoRecording || stoppingVideo) {
-            stopVideoCaptureAndFinalize();
-            return;
+        // Guard: proceed only when both photo and video work is done.
+        // The synchronized block is narrow — just the flag check/set.
+        synchronized (this) {
+            if (!photoDone || !videoDone) return;
+            if (finalized) return;
+            finalized = true;
         }
-        finalized = true;
 
         DebugLog.i(this, "CaptureService: finalizing, total photos=" + photoPaths.size()
                 + " video=" + (videoPath != null));
@@ -605,14 +683,6 @@ public class CaptureService extends Service {
         DebugLog.i(this, "CaptureService: captureComplete=true notifEnabled=" + notifEnabled
                 + " recordId=" + rec.id);
 
-        // Send notification IMMEDIATELY after saving the photos.
-        //
-        // The previous approach waited for USER_PRESENT or onPasswordSucceeded,
-        // but Samsung One UI 7 blocks both signals for sleeping processes.
-        // The notification appears in the notification shade on the lock screen
-        // (correct behavior for a security app) and is visible right after unlock.
-        //
-        // onPasswordSucceeded and USER_PRESENT remain as backup for cycle reset.
         if (notifEnabled) {
             DebugLog.i(this, "CaptureService: sending notification IMMEDIATELY");
             NotificationHelper.postAlert(this, rec.id);
@@ -634,6 +704,61 @@ public class CaptureService extends Service {
         }
         stopAndCleanup();
     }
+
+    // =========================================================================
+    // Cleanup
+    // =========================================================================
+
+    private void stopAndCleanup() {
+        if (stopped) return;
+        stopped = true;
+
+        Runnable cleanup = () -> {
+            try {
+                if (photoSession != null) { photoSession.close(); photoSession = null; }
+                if (photoCameraDevice != null) { photoCameraDevice.close(); photoCameraDevice = null; }
+                if (imageReader != null) { imageReader.close(); imageReader = null; }
+            } catch (Throwable t) {
+                Log.w(TAG, "cleanup photo camera", t);
+            }
+            try {
+                if (videoSession != null) { videoSession.close(); videoSession = null; }
+                if (videoCameraDevice != null) { videoCameraDevice.close(); videoCameraDevice = null; }
+            } catch (Throwable t) {
+                Log.w(TAG, "cleanup video camera", t);
+            }
+            if (videoRecording && mediaRecorder != null) {
+                try { mediaRecorder.stop(); } catch (RuntimeException ignored) { }
+            }
+            videoRecording = false;
+            stoppingVideo = false;
+            releaseMediaRecorder(true);
+
+            new Handler(getMainLooper()).post(() -> {
+                stopForeground(STOP_FOREGROUND_REMOVE);
+                stopSelf();
+            });
+        };
+
+        if (photoHandler != null) {
+            photoHandler.removeCallbacksAndMessages(null);
+            if (videoHandler != null) videoHandler.removeCallbacksAndMessages(null);
+            photoHandler.post(cleanup);
+        } else {
+            cleanup.run();
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (photoThread != null) { photoThread.quitSafely(); photoThread = null; }
+        if (videoThread != null) { videoThread.quitSafely(); videoThread = null; }
+    }
+
+    // =========================================================================
+    // Static helpers
+    // =========================================================================
 
     @Nullable
     private static String findFrontCameraId(CameraManager cm) throws CameraAccessException {
@@ -684,9 +809,7 @@ public class CaptureService extends Service {
             }
         }
         for (Size s : copy) {
-            if (s.getWidth() <= 1280 && s.getHeight() <= 720) {
-                return s;
-            }
+            if (s.getWidth() <= 1280 && s.getHeight() <= 720) return s;
         }
         return copy[0];
     }
@@ -724,15 +847,10 @@ public class CaptureService extends Service {
             rotation = wm.getDefaultDisplay().getRotation();
         }
         switch (rotation) {
-            case Surface.ROTATION_90:
-                return 90;
-            case Surface.ROTATION_180:
-                return 180;
-            case Surface.ROTATION_270:
-                return 270;
-            case Surface.ROTATION_0:
-            default:
-                return 0;
+            case Surface.ROTATION_90:  return 90;
+            case Surface.ROTATION_180: return 180;
+            case Surface.ROTATION_270: return 270;
+            default:                   return 0;
         }
     }
 
@@ -740,66 +858,13 @@ public class CaptureService extends Service {
         MediaRecorder recorder = mediaRecorder;
         mediaRecorder = null;
         if (recorder != null) {
-            try {
-                recorder.reset();
-            } catch (RuntimeException ignored) {
-                // Recorder may already be stopped or failed; release below is still safe.
-            }
-            try {
-                recorder.release();
-            } catch (RuntimeException ignored) {
-                // Nothing useful to recover here.
-            }
+            try { recorder.reset(); } catch (RuntimeException ignored) { }
+            try { recorder.release(); } catch (RuntimeException ignored) { }
         }
         if (deletePendingFile && pendingVideoFile != null && pendingVideoFile.exists()
                 && !pendingVideoFile.delete()) {
             Log.w(TAG, "Cannot delete failed video file: " + pendingVideoFile);
         }
         pendingVideoFile = null;
-    }
-
-    private void stopAndCleanup() {
-        if (stopped) return;
-        stopped = true;
-
-        Runnable cleanup = () -> {
-            try {
-                if (captureSession != null) { captureSession.close(); captureSession = null; }
-                if (cameraDevice != null) { cameraDevice.close(); cameraDevice = null; }
-                if (imageReader != null) { imageReader.close(); imageReader = null; }
-                if (videoRecording && mediaRecorder != null) {
-                    try {
-                        mediaRecorder.stop();
-                    } catch (RuntimeException ignored) {
-                        // A partial recording is not kept during service shutdown.
-                    }
-                }
-                videoRecording = false;
-                stoppingVideo = false;
-                releaseMediaRecorder(true);
-            } catch (Throwable t) {
-                Log.w(TAG, "cleanup", t);
-            }
-            new Handler(getMainLooper()).post(() -> {
-                stopForeground(STOP_FOREGROUND_REMOVE);
-                stopSelf();
-            });
-        };
-
-        if (cameraHandler != null) {
-            cameraHandler.removeCallbacksAndMessages(null);
-            cameraHandler.post(cleanup);
-        } else {
-            cleanup.run();
-        }
-    }
-
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        if (cameraThread != null) {
-            cameraThread.quitSafely();
-            cameraThread = null;
-        }
     }
 }

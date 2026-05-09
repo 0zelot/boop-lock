@@ -3,6 +3,7 @@ package fyi.ozelot.booplock;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
+import android.text.method.LinkMovementMethod;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -78,6 +79,7 @@ public class PhotoViewActivity extends AppCompatActivity {
         recordId = getIntent().getLongExtra(EXTRA_RECORD_ID, -1L);
         storage = new AttemptStorage(this);
         meta = findViewById(R.id.meta);
+        meta.setMovementMethod(LinkMovementMethod.getInstance());
 
         int metaInitialBottom = meta.getPaddingBottom();
         ViewCompat.setOnApplyWindowInsetsListener(meta, (v, insets) -> {

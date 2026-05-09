@@ -6,3 +6,4 @@ local.properties
 *.iml
 *.apk
 *.aab
+.android
