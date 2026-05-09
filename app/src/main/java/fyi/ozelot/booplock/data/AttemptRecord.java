@@ -1,28 +1,43 @@
 package fyi.ozelot.booplock.data;
 
+import androidx.annotation.Nullable;
+
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * A single history entry: when and how many unlock attempts failed,
- * plus the path to the front camera photo.
+ * A single history entry. Photos are stored as an ordered list: front-camera shots first,
+ * rear-camera shots second.
  *
  * JSON file storage is used instead of a database because the scale is small
  * and the app must stay lightweight.
+ *
+ * Backward compat: records written by older builds stored a single "photoPath" string.
+ * fromJson() converts that to a single-element list transparently.
  */
 public class AttemptRecord {
 
     public final long id;
     public final long timestampMs;
     public final int failedCount;
-    /** Absolute path to the JPEG file in the app's private directory. */
-    public final String photoPath;
+    /** Absolute paths to JPEG files, front-camera-first. */
+    public final List<String> photoPaths;
 
-    public AttemptRecord(long id, long timestampMs, int failedCount, String photoPath) {
+    public AttemptRecord(long id, long timestampMs, int failedCount, List<String> photoPaths) {
         this.id = id;
         this.timestampMs = timestampMs;
         this.failedCount = failedCount;
-        this.photoPath = photoPath;
+        this.photoPaths = photoPaths != null ? new ArrayList<>(photoPaths) : new ArrayList<>();
+    }
+
+    /** First available photo path, or null if none were saved. */
+    @Nullable
+    public String primaryPhotoPath() {
+        return photoPaths.isEmpty() ? null : photoPaths.get(0);
     }
 
     public JSONObject toJson() throws JSONException {
@@ -30,16 +45,27 @@ public class AttemptRecord {
         o.put("id", id);
         o.put("timestamp", timestampMs);
         o.put("failedCount", failedCount);
-        o.put("photoPath", photoPath);
+        JSONArray arr = new JSONArray();
+        for (String p : photoPaths) arr.put(p);
+        o.put("photoPaths", arr);
         return o;
     }
 
     public static AttemptRecord fromJson(JSONObject o) throws JSONException {
+        List<String> paths = new ArrayList<>();
+        if (o.has("photoPaths")) {
+            JSONArray arr = o.getJSONArray("photoPaths");
+            for (int i = 0; i < arr.length(); i++) paths.add(arr.getString(i));
+        } else {
+            // Backward compat: old format stored a single string
+            String p = o.optString("photoPath", null);
+            if (p != null && !p.isEmpty()) paths.add(p);
+        }
         return new AttemptRecord(
                 o.getLong("id"),
                 o.getLong("timestamp"),
                 o.getInt("failedCount"),
-                o.optString("photoPath", null)
+                paths
         );
     }
 }

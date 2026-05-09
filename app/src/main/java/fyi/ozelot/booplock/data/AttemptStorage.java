@@ -45,15 +45,15 @@ public class AttemptStorage {
         return capturesDir;
     }
 
-    /** Creates a new photo file — path to be used by the camera service. */
-    public File newPhotoFile(long timestampMs) {
-        return new File(capturesDir, "capture_" + timestampMs + ".jpg");
+    /** Creates a numbered photo file for the given camera label and shot index. */
+    public File newPhotoFile(long timestampMs, String cameraLabel, int index) {
+        return new File(capturesDir, "capture_" + timestampMs + "_" + cameraLabel + "_" + index + ".jpg");
     }
 
-    public synchronized AttemptRecord append(long timestampMs, int failedCount, String photoPath) {
+    public synchronized AttemptRecord append(long timestampMs, int failedCount, List<String> photoPaths) {
         List<AttemptRecord> list = readAll();
         long nextId = nextId(list);
-        AttemptRecord rec = new AttemptRecord(nextId, timestampMs, failedCount, photoPath);
+        AttemptRecord rec = new AttemptRecord(nextId, timestampMs, failedCount, photoPaths);
         list.add(rec);
         writeAll(list);
         return rec;
@@ -88,8 +88,8 @@ public class AttemptStorage {
         }
         if (toDelete == null) return;
         list.remove(toDelete);
-        if (toDelete.photoPath != null) {
-            File f = new File(toDelete.photoPath);
+        for (String path : toDelete.photoPaths) {
+            File f = new File(path);
             if (f.exists() && !f.delete()) {
                 Log.w(TAG, "Cannot delete photo file: " + f);
             }
@@ -100,8 +100,8 @@ public class AttemptStorage {
     public synchronized void deleteAll() {
         List<AttemptRecord> list = readAll();
         for (AttemptRecord r : list) {
-            if (r.photoPath != null) {
-                File f = new File(r.photoPath);
+            for (String path : r.photoPaths) {
+                File f = new File(path);
                 if (f.exists()) //noinspection ResultOfMethodCallIgnored
                     f.delete();
             }

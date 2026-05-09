@@ -105,9 +105,10 @@ public class AttemptAdapter extends RecyclerView.Adapter<AttemptAdapter.VH> {
                 if (clickListener != null) clickListener.onClick(r);
             });
 
-            if (r.photoPath == null) return;
+            String primaryPath = r.primaryPhotoPath();
+            if (primaryPath == null) return;
             final long bindId = r.id;
-            final String path = r.photoPath;
+            final String path = primaryPath;
             bgExec.execute(() -> {
                 Bitmap bm = decodeThumb(path, 200, 200);
                 ui.post(() -> {

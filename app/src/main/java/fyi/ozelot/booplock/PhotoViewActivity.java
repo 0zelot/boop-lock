@@ -8,7 +8,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -18,12 +20,16 @@ import androidx.appcompat.widget.Toolbar;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.exifinterface.media.ExifInterface;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.PagerSnapHelper;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,10 +38,10 @@ import fyi.ozelot.booplock.data.AttemptRecord;
 import fyi.ozelot.booplock.data.AttemptStorage;
 
 /**
- * Full-screen photo viewer for a selected history entry.
+ * Full-screen photo viewer for a selected history entry. Swipe left/right to browse
+ * all photos captured during the attempt (front-camera shots first, then rear).
  *
- * Rotation is read from EXIF — cameras often store RAW data in a different
- * orientation than expected for display.
+ * Rotation is read from EXIF — cameras often store raw data in landscape orientation.
  */
 public class PhotoViewActivity extends AppCompatActivity {
 
@@ -44,11 +50,13 @@ public class PhotoViewActivity extends AppCompatActivity {
     private static final SimpleDateFormat DATE_FMT =
             new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
 
-    private final ExecutorService bgExec = Executors.newSingleThreadExecutor();
+    private final ExecutorService bgExec = Executors.newFixedThreadPool(2);
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     private long recordId;
     private AttemptStorage storage;
+    private AttemptRecord rec;
+    private TextView meta;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -63,10 +71,7 @@ public class PhotoViewActivity extends AppCompatActivity {
 
         recordId = getIntent().getLongExtra(EXTRA_RECORD_ID, -1L);
         storage = new AttemptStorage(this);
-
-        ImageView img = findViewById(R.id.photo);
-        TextView meta = findViewById(R.id.meta);
-        View progress = findViewById(R.id.progress);
+        meta = findViewById(R.id.meta);
 
         int metaInitialBottom = meta.getPaddingBottom();
         ViewCompat.setOnApplyWindowInsetsListener(meta, (v, insets) -> {
@@ -76,27 +81,42 @@ public class PhotoViewActivity extends AppCompatActivity {
             return insets;
         });
 
-        AttemptRecord rec = storage.findById(recordId);
+        rec = storage.findById(recordId);
         if (rec == null) {
             meta.setText(R.string.photo_not_found);
-            progress.setVisibility(View.GONE);
             return;
         }
 
-        meta.setText(DATE_FMT.format(new Date(rec.timestampMs)));
-
-        if (rec.photoPath == null) {
-            progress.setVisibility(View.GONE);
+        if (rec.photoPaths.isEmpty()) {
+            meta.setText(DATE_FMT.format(new Date(rec.timestampMs)));
             return;
         }
 
-        bgExec.execute(() -> {
-            Bitmap bm = decodeWithRotation(rec.photoPath);
-            ui.post(() -> {
-                progress.setVisibility(View.GONE);
-                if (bm != null) img.setImageBitmap(bm);
-            });
+        RecyclerView pager = findViewById(R.id.photo_pager);
+        LinearLayoutManager lm = new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false);
+        pager.setLayoutManager(lm);
+        new PagerSnapHelper().attachToRecyclerView(pager);
+        pager.setAdapter(new PhotoPagerAdapter(rec.photoPaths));
+
+        updateMeta(0);
+
+        pager.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrollStateChanged(@NonNull RecyclerView rv, int newState) {
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    int pos = lm.findFirstCompletelyVisibleItemPosition();
+                    if (pos == RecyclerView.NO_POSITION) pos = lm.findFirstVisibleItemPosition();
+                    if (pos != RecyclerView.NO_POSITION) updateMeta(pos);
+                }
+            }
         });
+    }
+
+    private void updateMeta(int photoIndex) {
+        String timestamp = DATE_FMT.format(new Date(rec.timestampMs));
+        int total = rec.photoPaths.size();
+        String page = total > 1 ? "  •  " + (photoIndex + 1) + " / " + total : "";
+        meta.setText(timestamp + page);
     }
 
     @Override
@@ -127,22 +147,76 @@ public class PhotoViewActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
-    /** Decode with sampling and rotate according to EXIF. */
+    // --- Pager adapter ---
+
+    private class PhotoPagerAdapter extends RecyclerView.Adapter<PhotoPagerAdapter.VH> {
+
+        private final List<String> paths;
+
+        PhotoPagerAdapter(List<String> paths) {
+            this.paths = paths;
+        }
+
+        @NonNull
+        @Override
+        public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View v = getLayoutInflater().inflate(R.layout.item_photo_page, parent, false);
+            v.setLayoutParams(new RecyclerView.LayoutParams(
+                    RecyclerView.LayoutParams.MATCH_PARENT,
+                    RecyclerView.LayoutParams.MATCH_PARENT));
+            return new VH(v);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull VH holder, int position) {
+            holder.bind(paths.get(position));
+        }
+
+        @Override
+        public int getItemCount() {
+            return paths.size();
+        }
+
+        class VH extends RecyclerView.ViewHolder {
+            final ImageView photo;
+            final ProgressBar progress;
+            String currentPath;
+
+            VH(@NonNull View itemView) {
+                super(itemView);
+                photo = itemView.findViewById(R.id.page_photo);
+                progress = itemView.findViewById(R.id.page_progress);
+            }
+
+            void bind(String path) {
+                currentPath = path;
+                photo.setImageDrawable(null);
+                progress.setVisibility(View.VISIBLE);
+                bgExec.execute(() -> {
+                    Bitmap bm = decodeWithRotation(path);
+                    ui.post(() -> {
+                        if (!path.equals(currentPath)) return;
+                        progress.setVisibility(View.GONE);
+                        if (bm != null) photo.setImageBitmap(bm);
+                    });
+                });
+            }
+        }
+    }
+
+    // --- Bitmap decoding ---
+
     @Nullable
     private static Bitmap decodeWithRotation(String path) {
         BitmapFactory.Options o = new BitmapFactory.Options();
         o.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(path, o);
         int sample = 1;
-        // Target: ~2 megapixels for screen display.
-        while ((o.outWidth / sample) > 1600 || (o.outHeight / sample) > 1600) {
-            sample *= 2;
-        }
+        while ((o.outWidth / sample) > 1600 || (o.outHeight / sample) > 1600) sample *= 2;
         BitmapFactory.Options o2 = new BitmapFactory.Options();
         o2.inSampleSize = sample;
         Bitmap bm = BitmapFactory.decodeFile(path, o2);
         if (bm == null) return null;
-
         try {
             ExifInterface exif = new ExifInterface(path);
             int orient = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION,
@@ -161,7 +235,7 @@ public class PhotoViewActivity extends AppCompatActivity {
                 if (rotated != bm) bm.recycle();
                 bm = rotated;
             }
-        } catch (IOException ignore) { /* leave original */ }
+        } catch (IOException ignore) { /* leave original orientation */ }
         return bm;
     }
 }
