@@ -17,12 +17,15 @@ import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
+import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.util.Log;
 import android.util.Size;
+import android.view.Surface;
+import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -71,7 +74,8 @@ public class CaptureService extends Service {
     private static final String TAG = "CaptureService";
     private static final int SHOTS_PER_CAMERA = 3;
     private static final long SHOT_DELAY_MS = 2000;
-    private static final long TIMEOUT_MS = 30_000;
+    private static final long VIDEO_DURATION_MS = 10_000;
+    private static final long TIMEOUT_MS = 60_000;
 
     private enum Phase { FRONT, REAR }
 
@@ -81,15 +85,22 @@ public class CaptureService extends Service {
     private CameraDevice cameraDevice;
     private CameraCaptureSession captureSession;
     private ImageReader imageReader;
+    private MediaRecorder mediaRecorder;
+    private File pendingVideoFile;
+    private CameraCharacteristics currentCameraCharacteristics;
+    private boolean currentCameraFront;
 
     private Phase currentPhase;
     private int shotsTaken;
     private final List<String> photoPaths = new ArrayList<>();
+    private String videoPath;
 
     private int failedCount;
     private long startTimestamp;
     private boolean finalized;
     private boolean stopped;
+    private boolean videoRecording;
+    private boolean stoppingVideo;
 
     private AttemptStorage storage;
 
@@ -107,16 +118,7 @@ public class CaptureService extends Service {
         startTimestamp = System.currentTimeMillis();
         DebugLog.i(this, "CaptureService: START failedCount=" + failedCount);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                    NotificationHelper.NOTIF_SERVICE_ID,
-                    NotificationHelper.buildServiceNotification(this),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
-        } else {
-            startForeground(
-                    NotificationHelper.NOTIF_SERVICE_ID,
-                    NotificationHelper.buildServiceNotification(this));
-        }
+        startCaptureForeground();
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -136,12 +138,45 @@ public class CaptureService extends Service {
         cameraHandler.post(this::openCurrentCamera);
 
         cameraHandler.postDelayed(() -> {
-            DebugLog.e(this, "CaptureService: TIMEOUT 30s - finalizing with "
+            DebugLog.e(this, "CaptureService: TIMEOUT 60s - finalizing with "
                     + photoPaths.size() + " photos");
             finalizeCapture();
         }, TIMEOUT_MS);
 
         return START_NOT_STICKY;
+    }
+
+    private void startCaptureForeground() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                    NotificationHelper.NOTIF_SERVICE_ID,
+                    NotificationHelper.buildServiceNotification(this),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+        } else {
+            startForeground(
+                    NotificationHelper.NOTIF_SERVICE_ID,
+                    NotificationHelper.buildServiceNotification(this));
+        }
+    }
+
+    private boolean hasAudioPermission() {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean tryStartMicrophoneForeground() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true;
+        try {
+            startForeground(
+                    NotificationHelper.NOTIF_SERVICE_ID,
+                    NotificationHelper.buildServiceNotification(this),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                            | ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+            return true;
+        } catch (SecurityException | IllegalArgumentException e) {
+            DebugLog.e(this, "CaptureService: cannot enable microphone FGS: " + e.getMessage());
+            return false;
+        }
     }
 
     @SuppressWarnings("MissingPermission")
@@ -163,6 +198,8 @@ public class CaptureService extends Service {
             }
 
             CameraCharacteristics chars = cm.getCameraCharacteristics(cameraId);
+            currentCameraCharacteristics = chars;
+            currentCameraFront = currentPhase == Phase.FRONT;
             StreamConfigurationMap map = chars.get(
                     CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             Size jpegSize = pickJpegSize(map);
@@ -236,6 +273,10 @@ public class CaptureService extends Service {
             b.set(CaptureRequest.CONTROL_AF_MODE,
                     CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
             b.set(CaptureRequest.JPEG_QUALITY, (byte) 85);
+            if (currentCameraCharacteristics != null) {
+                b.set(CaptureRequest.JPEG_ORIENTATION,
+                        outputOrientation(currentCameraCharacteristics, currentCameraFront));
+            }
             captureSession.capture(b.build(), null, cameraHandler);
         } catch (CameraAccessException e) {
             Log.e(TAG, "captureStill failed", e);
@@ -303,7 +344,7 @@ public class CaptureService extends Service {
             DebugLog.i(this, "CaptureService: switching to REAR camera");
             openCurrentCamera();
         } else {
-            finalizeCapture();
+            startVideoCapture();
         }
     }
 
@@ -313,13 +354,211 @@ public class CaptureService extends Service {
         closeCameraResourcesThen(this::advancePhaseOrFinalize);
     }
 
+    @SuppressWarnings("MissingPermission")
+    private void startVideoCapture() {
+        if (finalized) return;
+
+        if (!hasAudioPermission()) {
+            DebugLog.w(this, "CaptureService: RECORD_AUDIO permission missing - skipping video");
+            finalizeCapture();
+            return;
+        }
+        if (!tryStartMicrophoneForeground()) {
+            DebugLog.w(this, "CaptureService: microphone foreground type unavailable - skipping video");
+            finalizeCapture();
+            return;
+        }
+
+        CameraManager cm = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+        if (cm == null) {
+            handleVideoError("no CameraManager");
+            return;
+        }
+
+        try {
+            String cameraId = findFrontCameraId(cm);
+            boolean frontCamera = true;
+            if (cameraId == null) {
+                cameraId = findRearCameraId(cm);
+                frontCamera = false;
+            }
+            if (cameraId == null) {
+                DebugLog.w(this, "CaptureService: no camera available for video - skipping");
+                finalizeCapture();
+                return;
+            }
+
+            CameraCharacteristics chars = cm.getCameraCharacteristics(cameraId);
+            StreamConfigurationMap map = chars.get(
+                    CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            Size videoSize = pickVideoSize(map);
+
+            pendingVideoFile = storage.newVideoFile(startTimestamp);
+            prepareMediaRecorder(pendingVideoFile, videoSize, chars, frontCamera);
+
+            DebugLog.i(this, "CaptureService: opening video camera id=" + cameraId
+                    + " size=" + videoSize.getWidth() + "x" + videoSize.getHeight());
+
+            cm.openCamera(cameraId, new CameraDevice.StateCallback() {
+                @Override
+                public void onOpened(@NonNull CameraDevice camera) {
+                    cameraDevice = camera;
+                    createVideoCaptureSession();
+                }
+
+                @Override
+                public void onDisconnected(@NonNull CameraDevice camera) {
+                    Log.w(TAG, "Video camera disconnected");
+                    camera.close();
+                    cameraDevice = null;
+                    handleVideoError("disconnected");
+                }
+
+                @Override
+                public void onError(@NonNull CameraDevice camera, int error) {
+                    Log.e(TAG, "Video camera error: " + error);
+                    camera.close();
+                    cameraDevice = null;
+                    handleVideoError("error " + error);
+                }
+            }, cameraHandler);
+        } catch (CameraAccessException | IOException | RuntimeException e) {
+            Log.e(TAG, "Cannot start video capture", e);
+            handleVideoError(e.getMessage());
+        }
+    }
+
+    private void prepareMediaRecorder(File outFile, Size videoSize, CameraCharacteristics chars,
+                                      boolean frontCamera) throws IOException {
+        releaseMediaRecorder(true);
+        pendingVideoFile = outFile;
+        mediaRecorder = new MediaRecorder();
+        mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+        mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+        mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+        mediaRecorder.setOutputFile(outFile.getAbsolutePath());
+        mediaRecorder.setVideoEncodingBitRate(videoBitRate(videoSize));
+        mediaRecorder.setVideoFrameRate(30);
+        mediaRecorder.setVideoSize(videoSize.getWidth(), videoSize.getHeight());
+        mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+        mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+        mediaRecorder.setAudioEncodingBitRate(128_000);
+        mediaRecorder.setAudioSamplingRate(44_100);
+        mediaRecorder.setOrientationHint(videoOrientationHint(chars, frontCamera));
+        mediaRecorder.prepare();
+    }
+
+    private void createVideoCaptureSession() {
+        try {
+            Surface recorderSurface = mediaRecorder.getSurface();
+            cameraDevice.createCaptureSession(
+                    Collections.singletonList(recorderSurface),
+                    new CameraCaptureSession.StateCallback() {
+                        @Override
+                        public void onConfigured(@NonNull CameraCaptureSession session) {
+                            captureSession = session;
+                            startVideoRecording(recorderSurface);
+                        }
+
+                        @Override
+                        public void onConfigureFailed(@NonNull CameraCaptureSession session) {
+                            Log.e(TAG, "Video capture session configure failed");
+                            handleVideoError("configure failed");
+                        }
+                    }, cameraHandler);
+        } catch (CameraAccessException | RuntimeException e) {
+            Log.e(TAG, "createVideoCaptureSession failed", e);
+            handleVideoError(e.getMessage());
+        }
+    }
+
+    private void startVideoRecording(Surface recorderSurface) {
+        try {
+            CaptureRequest.Builder b = cameraDevice.createCaptureRequest(
+                    CameraDevice.TEMPLATE_RECORD);
+            b.addTarget(recorderSurface);
+            b.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+            b.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON);
+            b.set(CaptureRequest.CONTROL_AF_MODE,
+                    CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+            captureSession.setRepeatingRequest(b.build(), null, cameraHandler);
+
+            mediaRecorder.start();
+            videoRecording = true;
+            DebugLog.i(this, "CaptureService: recording video for "
+                    + VIDEO_DURATION_MS + "ms");
+            cameraHandler.postDelayed(this::stopVideoCaptureAndFinalize, VIDEO_DURATION_MS);
+        } catch (CameraAccessException | RuntimeException e) {
+            Log.e(TAG, "startVideoRecording failed", e);
+            handleVideoError(e.getMessage());
+        }
+    }
+
+    private void stopVideoCaptureAndFinalize() {
+        if (finalized || stoppingVideo) return;
+        stoppingVideo = true;
+
+        boolean saved = false;
+        File completedFile = pendingVideoFile;
+
+        try {
+            if (captureSession != null) {
+                try {
+                    captureSession.stopRepeating();
+                    captureSession.abortCaptures();
+                } catch (CameraAccessException | IllegalStateException e) {
+                    Log.w(TAG, "stop video repeating", e);
+                }
+            }
+
+            if (videoRecording && mediaRecorder != null) {
+                try {
+                    mediaRecorder.stop();
+                    saved = completedFile != null && completedFile.exists()
+                            && completedFile.length() > 0;
+                } catch (RuntimeException e) {
+                    Log.e(TAG, "mediaRecorder.stop failed", e);
+                }
+            }
+        } finally {
+            videoRecording = false;
+            releaseMediaRecorder(!saved);
+        }
+
+        if (saved) {
+            videoPath = completedFile.getAbsolutePath();
+            DebugLog.i(this, "CaptureService: saved video size="
+                    + completedFile.length() + "B");
+        } else {
+            DebugLog.w(this, "CaptureService: video not saved");
+        }
+
+        closeCameraResourcesThen(() -> {
+            stoppingVideo = false;
+            finalizeCapture();
+        });
+    }
+
+    private void handleVideoError(String reason) {
+        DebugLog.w(this, "CaptureService: video error: " + reason
+                + ", finalizing with photos only");
+        videoRecording = false;
+        releaseMediaRecorder(true);
+        closeCameraResourcesThen(this::finalizeCapture);
+    }
+
     private void finalizeCapture() {
         if (finalized) return;
+        if (videoRecording || stoppingVideo) {
+            stopVideoCaptureAndFinalize();
+            return;
+        }
         finalized = true;
 
-        DebugLog.i(this, "CaptureService: finalizing, total photos=" + photoPaths.size());
+        DebugLog.i(this, "CaptureService: finalizing, total photos=" + photoPaths.size()
+                + " video=" + (videoPath != null));
 
-        AttemptRecord rec = storage.append(startTimestamp, failedCount, photoPaths);
+        AttemptRecord rec = storage.append(startTimestamp, failedCount, photoPaths, videoPath);
 
         Prefs prefs = Prefs.get(this);
         prefs.setLastCyclePhotoPath(photoPaths.isEmpty() ? null : photoPaths.get(0));
@@ -383,6 +622,95 @@ public class CaptureService extends Service {
         return copy[copy.length - 1];
     }
 
+    private static Size pickVideoSize(@Nullable StreamConfigurationMap map) {
+        if (map == null) return new Size(640, 480);
+        Size[] sizes = map.getOutputSizes(MediaRecorder.class);
+        if (sizes == null || sizes.length == 0) return new Size(640, 480);
+        Size[] copy = sizes.clone();
+        Arrays.sort(copy, (a, b) -> Long.compare(
+                (long) a.getWidth() * a.getHeight(),
+                (long) b.getWidth() * b.getHeight()));
+        for (Size s : copy) {
+            if (s.getWidth() >= 640 && s.getHeight() >= 480
+                    && s.getWidth() <= 1280 && s.getHeight() <= 720) {
+                return s;
+            }
+        }
+        for (Size s : copy) {
+            if (s.getWidth() <= 1280 && s.getHeight() <= 720) {
+                return s;
+            }
+        }
+        return copy[0];
+    }
+
+    private static int videoBitRate(Size size) {
+        long pixels = (long) size.getWidth() * size.getHeight();
+        if (pixels >= 1280L * 720L) return 5_000_000;
+        if (pixels >= 640L * 480L) return 2_000_000;
+        return 1_000_000;
+    }
+
+    private int videoOrientationHint(CameraCharacteristics chars, boolean frontCamera) {
+        int base = outputOrientation(chars, frontCamera);
+        if (frontCamera) {
+            base = (360 - base) % 360;
+        }
+        return (base + 180) % 360;
+    }
+
+    private int outputOrientation(CameraCharacteristics chars, boolean frontCamera) {
+        Integer sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION);
+        int sensor = sensorOrientation != null ? sensorOrientation : 90;
+        int device = deviceRotationDegrees();
+        if (frontCamera) {
+            return (sensor + device) % 360;
+        }
+        return (sensor - device + 360) % 360;
+    }
+
+    @SuppressWarnings("deprecation")
+    private int deviceRotationDegrees() {
+        WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        int rotation = Surface.ROTATION_0;
+        if (wm != null && wm.getDefaultDisplay() != null) {
+            rotation = wm.getDefaultDisplay().getRotation();
+        }
+        switch (rotation) {
+            case Surface.ROTATION_90:
+                return 90;
+            case Surface.ROTATION_180:
+                return 180;
+            case Surface.ROTATION_270:
+                return 270;
+            case Surface.ROTATION_0:
+            default:
+                return 0;
+        }
+    }
+
+    private void releaseMediaRecorder(boolean deletePendingFile) {
+        MediaRecorder recorder = mediaRecorder;
+        mediaRecorder = null;
+        if (recorder != null) {
+            try {
+                recorder.reset();
+            } catch (RuntimeException ignored) {
+                // Recorder may already be stopped or failed; release below is still safe.
+            }
+            try {
+                recorder.release();
+            } catch (RuntimeException ignored) {
+                // Nothing useful to recover here.
+            }
+        }
+        if (deletePendingFile && pendingVideoFile != null && pendingVideoFile.exists()
+                && !pendingVideoFile.delete()) {
+            Log.w(TAG, "Cannot delete failed video file: " + pendingVideoFile);
+        }
+        pendingVideoFile = null;
+    }
+
     private void stopAndCleanup() {
         if (stopped) return;
         stopped = true;
@@ -392,6 +720,16 @@ public class CaptureService extends Service {
                 if (captureSession != null) { captureSession.close(); captureSession = null; }
                 if (cameraDevice != null) { cameraDevice.close(); cameraDevice = null; }
                 if (imageReader != null) { imageReader.close(); imageReader = null; }
+                if (videoRecording && mediaRecorder != null) {
+                    try {
+                        mediaRecorder.stop();
+                    } catch (RuntimeException ignored) {
+                        // A partial recording is not kept during service shutdown.
+                    }
+                }
+                videoRecording = false;
+                stoppingVideo = false;
+                releaseMediaRecorder(true);
             } catch (Throwable t) {
                 Log.w(TAG, "cleanup", t);
             }

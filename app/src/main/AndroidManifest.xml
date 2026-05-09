@@ -4,10 +4,12 @@
 
     <!-- Camera: required for taking photos with the front camera. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Foreground service - required since Android P+. Type "camera" since Android 14. -->
+    <!-- Foreground service - required since Android P+. Types since Android 14. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!-- Push notifications (Android 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -26,6 +28,9 @@
         android:required="false" />
     <uses-feature
         android:name="android.hardware.camera.front"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.microphone"
         android:required="false" />
 
     <application
@@ -69,13 +74,13 @@
             android:label="@string/photo_view_title"
             android:parentActivityName=".MainActivity" />
 
-        <!-- Foreground service for taking a silent photo.
+        <!-- Foreground service for taking photos and a short video.
              foregroundServiceType=camera is REQUIRED since Android 14
              for services of this type to have camera access at all. -->
         <service
             android:name=".service.CaptureService"
             android:exported="false"
-            android:foregroundServiceType="camera" />
+            android:foregroundServiceType="camera|microphone" />
 
         <!-- DeviceAdminReceiver - the only public Android API that allows
              listening to onPasswordFailed/onPasswordSucceeded events. -->

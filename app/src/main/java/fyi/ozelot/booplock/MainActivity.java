@@ -68,6 +68,7 @@ public class MainActivity extends AppCompatActivity {
     private AttemptAdapter adapter;
 
     private ActivityResultLauncher<String> requestCameraLauncher;
+    private ActivityResultLauncher<String> requestAudioLauncher;
     private ActivityResultLauncher<String> requestNotificationsLauncher;
     private ActivityResultLauncher<Intent> requestAdminLauncher;
     private ActivityResultLauncher<Intent> requestBatteryLauncher;
@@ -104,6 +105,10 @@ public class MainActivity extends AppCompatActivity {
         recycler.setAdapter(adapter);
 
         requestCameraLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestPermission(),
+                granted -> updatePermissionPanel());
+
+        requestAudioLauncher = registerForActivityResult(
                 new ActivityResultContracts.RequestPermission(),
                 granted -> updatePermissionPanel());
 
@@ -215,6 +220,9 @@ public class MainActivity extends AppCompatActivity {
         boolean cameraGranted = ContextCompat.checkSelfPermission(this,
                 Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
 
+        boolean audioGranted = ContextCompat.checkSelfPermission(this,
+                Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+
         boolean notificationsGranted = true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notificationsGranted = ContextCompat.checkSelfPermission(this,
@@ -230,6 +238,9 @@ public class MainActivity extends AppCompatActivity {
         } else if (!cameraGranted) {
             show(R.string.perm_need_camera, R.string.perm_btn_camera,
                     v -> requestCameraLauncher.launch(Manifest.permission.CAMERA));
+        } else if (!audioGranted) {
+            show(R.string.perm_need_audio, R.string.perm_btn_audio,
+                    v -> requestAudioLauncher.launch(Manifest.permission.RECORD_AUDIO));
         } else if (!notificationsGranted) {
             show(R.string.perm_need_notifications, R.string.perm_btn_notifications,
                     v -> {

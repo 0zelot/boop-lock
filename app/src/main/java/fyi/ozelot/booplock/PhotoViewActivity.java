@@ -3,6 +3,7 @@ package fyi.ozelot.booplock;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -10,8 +11,10 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.widget.MediaController;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.VideoView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -26,8 +29,10 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -56,6 +61,7 @@ public class PhotoViewActivity extends AppCompatActivity {
     private long recordId;
     private AttemptStorage storage;
     private AttemptRecord rec;
+    private List<MediaPage> pages = new ArrayList<>();
     private TextView meta;
 
     @Override
@@ -87,7 +93,8 @@ public class PhotoViewActivity extends AppCompatActivity {
             return;
         }
 
-        if (rec.photoPaths.isEmpty()) {
+        pages = buildMediaPages(rec);
+        if (pages.isEmpty()) {
             meta.setText(DATE_FMT.format(new Date(rec.timestampMs)));
             return;
         }
@@ -96,7 +103,7 @@ public class PhotoViewActivity extends AppCompatActivity {
         LinearLayoutManager lm = new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false);
         pager.setLayoutManager(lm);
         new PagerSnapHelper().attachToRecyclerView(pager);
-        pager.setAdapter(new PhotoPagerAdapter(rec.photoPaths));
+        pager.setAdapter(new MediaPagerAdapter(pages));
 
         updateMeta(0);
 
@@ -114,8 +121,8 @@ public class PhotoViewActivity extends AppCompatActivity {
 
     private void updateMeta(int photoIndex) {
         String timestamp = DATE_FMT.format(new Date(rec.timestampMs));
-        int total = rec.photoPaths.size();
-        String page = total > 1 ? "  •  " + (photoIndex + 1) + " / " + total : "";
+        int total = pages.size();
+        String page = total > 1 ? "  -  " + (photoIndex + 1) + " / " + total : "";
         meta.setText(timestamp + page);
     }
 
@@ -147,14 +154,35 @@ public class PhotoViewActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
+    private static List<MediaPage> buildMediaPages(AttemptRecord rec) {
+        List<MediaPage> out = new ArrayList<>();
+        for (String path : rec.photoPaths) {
+            out.add(new MediaPage(path, false));
+        }
+        if (rec.hasVideo()) {
+            out.add(new MediaPage(rec.videoPath, true));
+        }
+        return out;
+    }
+
+    private static class MediaPage {
+        final String path;
+        final boolean video;
+
+        MediaPage(String path, boolean video) {
+            this.path = path;
+            this.video = video;
+        }
+    }
+
     // --- Pager adapter ---
 
-    private class PhotoPagerAdapter extends RecyclerView.Adapter<PhotoPagerAdapter.VH> {
+    private class MediaPagerAdapter extends RecyclerView.Adapter<MediaPagerAdapter.VH> {
 
-        private final List<String> paths;
+        private final List<MediaPage> items;
 
-        PhotoPagerAdapter(List<String> paths) {
-            this.paths = paths;
+        MediaPagerAdapter(List<MediaPage> items) {
+            this.items = items;
         }
 
         @NonNull
@@ -169,27 +197,52 @@ public class PhotoViewActivity extends AppCompatActivity {
 
         @Override
         public void onBindViewHolder(@NonNull VH holder, int position) {
-            holder.bind(paths.get(position));
+            holder.bind(items.get(position));
         }
 
         @Override
         public int getItemCount() {
-            return paths.size();
+            return items.size();
+        }
+
+        @Override
+        public void onViewDetachedFromWindow(@NonNull VH holder) {
+            holder.stopVideo();
+            super.onViewDetachedFromWindow(holder);
+        }
+
+        @Override
+        public void onViewRecycled(@NonNull VH holder) {
+            holder.clear();
+            super.onViewRecycled(holder);
         }
 
         class VH extends RecyclerView.ViewHolder {
             final ImageView photo;
+            final VideoView video;
             final ProgressBar progress;
             String currentPath;
 
             VH(@NonNull View itemView) {
                 super(itemView);
                 photo = itemView.findViewById(R.id.page_photo);
+                video = itemView.findViewById(R.id.page_video);
                 progress = itemView.findViewById(R.id.page_progress);
             }
 
-            void bind(String path) {
-                currentPath = path;
+            void bind(MediaPage page) {
+                currentPath = page.path;
+                clearViews();
+                if (page.video) {
+                    bindVideo(page.path);
+                } else {
+                    bindPhoto(page.path);
+                }
+            }
+
+            private void bindPhoto(String path) {
+                photo.setVisibility(View.VISIBLE);
+                video.setVisibility(View.GONE);
                 photo.setImageDrawable(null);
                 progress.setVisibility(View.VISIBLE);
                 bgExec.execute(() -> {
@@ -200,6 +253,53 @@ public class PhotoViewActivity extends AppCompatActivity {
                         if (bm != null) photo.setImageBitmap(bm);
                     });
                 });
+            }
+
+            private void bindVideo(String path) {
+                photo.setVisibility(View.GONE);
+                video.setVisibility(View.VISIBLE);
+                progress.setVisibility(View.VISIBLE);
+
+                MediaController controller = new MediaController(PhotoViewActivity.this);
+                controller.setAnchorView(video);
+                video.setMediaController(controller);
+                video.setOnPreparedListener(mp -> {
+                    if (!path.equals(currentPath)) return;
+                    progress.setVisibility(View.GONE);
+                    video.start();
+                });
+                video.setOnErrorListener((mp, what, extra) -> {
+                    if (path.equals(currentPath)) {
+                        progress.setVisibility(View.GONE);
+                    }
+                    return true;
+                });
+                video.setVideoURI(Uri.fromFile(new File(path)));
+            }
+
+            void stopVideo() {
+                if (video.getVisibility() == View.VISIBLE && video.isPlaying()) {
+                    video.pause();
+                }
+            }
+
+            void clear() {
+                currentPath = null;
+                clearViews();
+            }
+
+            private void clearViews() {
+                photo.setImageDrawable(null);
+                video.setOnPreparedListener(null);
+                video.setOnErrorListener(null);
+                video.setMediaController(null);
+                try {
+                    video.stopPlayback();
+                } catch (RuntimeException ignored) {
+                    // VideoView can throw while detaching from an unfinished prepare.
+                }
+                video.setVisibility(View.GONE);
+                progress.setVisibility(View.GONE);
             }
         }
     }

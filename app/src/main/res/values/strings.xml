@@ -3,7 +3,7 @@
 
     <!-- Screen titles -->
     <string name="settings_title">Settings</string>
-    <string name="photo_view_title">Photo</string>
+    <string name="photo_view_title">Media</string>
 
     <!-- Menu -->
     <string name="menu_settings">Settings</string>
@@ -23,6 +23,8 @@
     <string name="perm_btn_admin">Enable administrator</string>
     <string name="perm_need_camera">Camera permission is missing. Without it, no photo can be taken when an attempt is detected.</string>
     <string name="perm_btn_camera">Grant camera</string>
+    <string name="perm_need_audio">Microphone permission is missing. Without it, the 10-second recording cannot include audio.</string>
+    <string name="perm_btn_audio">Grant microphone</string>
     <string name="perm_need_notifications">Notification permission is missing. Without it, you will not see an alert about a detected attempt.</string>
     <string name="perm_btn_notifications">Grant notifications</string>
     <string name="error_admin_intent">Could not open the device administrator screen.</string>
@@ -40,25 +42,33 @@
 
     <!-- Notifications -->
     <string name="channel_service_name">Background activity</string>
-    <string name="channel_service_desc">System-required notification while taking a photo.</string>
+    <string name="channel_service_desc">System-required notification while capturing photos and video.</string>
     <string name="channel_alert_name">Detected unlock attempts</string>
     <string name="channel_alert_desc">Alert about a detected unlock attempt.</string>
     <string name="service_notif_title">BoopLock</string>
-    <string name="service_notif_text">Taking photo...</string>
+    <string name="service_notif_text">Capturing photos and video...</string>
     <string name="alert_title">Unlock attempt</string>
     <string name="alert_text_fmt">Someone tried to unlock your device! Tap to view.</string>
 
     <!-- Dialogs -->
     <string name="clear_all_title">Clear history?</string>
-    <string name="clear_all_message">All saved entries and photos will be deleted.</string>
+    <string name="clear_all_message">All saved entries, photos, and recordings will be deleted.</string>
     <string name="clear_all_confirm">Clear</string>
     <string name="delete_one_title">Delete entry?</string>
-    <string name="delete_one_message">The entry and photo will be deleted.</string>
+    <string name="delete_one_message">The entry, photos, and recording will be deleted.</string>
     <string name="delete_one_confirm">Delete</string>
 
     <!-- Photo view -->
     <string name="photo_content_description">Front camera photo</string>
+    <string name="video_content_description">Attempt recording</string>
     <string name="photo_not_found">Entry not found.</string>
+    <plurals name="media_summary_photos">
+        <item quantity="one">%d photo</item>
+        <item quantity="other">%d photos</item>
+    </plurals>
+    <string name="media_summary_with_video">%1$s + video</string>
+    <string name="media_summary_video_only">Video</string>
+    <string name="media_summary_empty">No media saved</string>
 
     <!-- Preferences -->
     <string name="pref_cat_detection">Detection</string>

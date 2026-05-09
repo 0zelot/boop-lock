@@ -50,10 +50,20 @@ public class AttemptStorage {
         return new File(capturesDir, "capture_" + timestampMs + "_" + cameraLabel + "_" + index + ".jpg");
     }
 
+    /** Creates the MP4 video file for a capture cycle. */
+    public File newVideoFile(long timestampMs) {
+        return new File(capturesDir, "capture_" + timestampMs + "_video.mp4");
+    }
+
     public synchronized AttemptRecord append(long timestampMs, int failedCount, List<String> photoPaths) {
+        return append(timestampMs, failedCount, photoPaths, null);
+    }
+
+    public synchronized AttemptRecord append(long timestampMs, int failedCount, List<String> photoPaths,
+                                             String videoPath) {
         List<AttemptRecord> list = readAll();
         long nextId = nextId(list);
-        AttemptRecord rec = new AttemptRecord(nextId, timestampMs, failedCount, photoPaths);
+        AttemptRecord rec = new AttemptRecord(nextId, timestampMs, failedCount, photoPaths, videoPath);
         list.add(rec);
         writeAll(list);
         return rec;
@@ -89,11 +99,9 @@ public class AttemptStorage {
         if (toDelete == null) return;
         list.remove(toDelete);
         for (String path : toDelete.photoPaths) {
-            File f = new File(path);
-            if (f.exists() && !f.delete()) {
-                Log.w(TAG, "Cannot delete photo file: " + f);
-            }
+            deleteFile(path, "photo");
         }
+        deleteFile(toDelete.videoPath, "video");
         writeAll(list);
     }
 
@@ -101,10 +109,9 @@ public class AttemptStorage {
         List<AttemptRecord> list = readAll();
         for (AttemptRecord r : list) {
             for (String path : r.photoPaths) {
-                File f = new File(path);
-                if (f.exists()) //noinspection ResultOfMethodCallIgnored
-                    f.delete();
+                deleteFile(path, "photo");
             }
+            deleteFile(r.videoPath, "video");
         }
         writeAll(new ArrayList<AttemptRecord>());
     }
@@ -165,5 +172,13 @@ public class AttemptStorage {
             if (r.id > max) max = r.id;
         }
         return max + 1;
+    }
+
+    private static void deleteFile(String path, String label) {
+        if (path == null || path.isEmpty()) return;
+        File f = new File(path);
+        if (f.exists() && !f.delete()) {
+            Log.w(TAG, "Cannot delete " + label + " file: " + f);
+        }
     }
 }

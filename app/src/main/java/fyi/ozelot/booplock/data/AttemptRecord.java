@@ -26,18 +26,31 @@ public class AttemptRecord {
     public final int failedCount;
     /** Absolute paths to JPEG files, front-camera-first. */
     public final List<String> photoPaths;
+    /** Absolute path to the MP4 recording, or null when no video was saved. */
+    @Nullable
+    public final String videoPath;
 
     public AttemptRecord(long id, long timestampMs, int failedCount, List<String> photoPaths) {
+        this(id, timestampMs, failedCount, photoPaths, null);
+    }
+
+    public AttemptRecord(long id, long timestampMs, int failedCount, List<String> photoPaths,
+                         @Nullable String videoPath) {
         this.id = id;
         this.timestampMs = timestampMs;
         this.failedCount = failedCount;
         this.photoPaths = photoPaths != null ? new ArrayList<>(photoPaths) : new ArrayList<>();
+        this.videoPath = (videoPath != null && !videoPath.isEmpty()) ? videoPath : null;
     }
 
     /** First available photo path, or null if none were saved. */
     @Nullable
     public String primaryPhotoPath() {
         return photoPaths.isEmpty() ? null : photoPaths.get(0);
+    }
+
+    public boolean hasVideo() {
+        return videoPath != null && !videoPath.isEmpty();
     }
 
     public JSONObject toJson() throws JSONException {
@@ -48,6 +61,9 @@ public class AttemptRecord {
         JSONArray arr = new JSONArray();
         for (String p : photoPaths) arr.put(p);
         o.put("photoPaths", arr);
+        if (hasVideo()) {
+            o.put("videoPath", videoPath);
+        }
         return o;
     }
 
@@ -61,11 +77,17 @@ public class AttemptRecord {
             String p = o.optString("photoPath", null);
             if (p != null && !p.isEmpty()) paths.add(p);
         }
+        String videoPath = null;
+        if (o.has("videoPath") && !o.isNull("videoPath")) {
+            String p = o.optString("videoPath", null);
+            if (p != null && !p.isEmpty()) videoPath = p;
+        }
         return new AttemptRecord(
                 o.getLong("id"),
                 o.getLong("timestamp"),
                 o.getInt("failedCount"),
-                paths
+                paths,
+                videoPath
         );
     }
 }

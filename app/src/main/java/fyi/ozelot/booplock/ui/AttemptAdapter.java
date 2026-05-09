@@ -1,5 +1,6 @@
 package fyi.ozelot.booplock.ui;
 
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Handler;
@@ -86,6 +87,7 @@ public class AttemptAdapter extends RecyclerView.Adapter<AttemptAdapter.VH> {
         final ImageView thumb;
         final TextView dateText;
         final TextView timeText;
+        final TextView mediaText;
         long currentId = -1;
 
         VH(@NonNull View itemView) {
@@ -93,6 +95,7 @@ public class AttemptAdapter extends RecyclerView.Adapter<AttemptAdapter.VH> {
             thumb = itemView.findViewById(R.id.thumb);
             dateText = itemView.findViewById(R.id.date_text);
             timeText = itemView.findViewById(R.id.time_text);
+            mediaText = itemView.findViewById(R.id.media_text);
         }
 
         void bind(AttemptRecord r) {
@@ -100,6 +103,7 @@ public class AttemptAdapter extends RecyclerView.Adapter<AttemptAdapter.VH> {
             Date d = new Date(r.timestampMs);
             dateText.setText(DATE_FMT.format(d));
             timeText.setText(TIME_FMT.format(d));
+            mediaText.setText(mediaSummary(itemView.getContext(), r));
             thumb.setImageResource(R.drawable.ic_thumb_placeholder);
             itemView.setOnClickListener(v -> {
                 if (clickListener != null) clickListener.onClick(r);
@@ -121,6 +125,20 @@ public class AttemptAdapter extends RecyclerView.Adapter<AttemptAdapter.VH> {
     }
 
     /** Sampled decoder — protects memory; a 4K thumbnail is not needed. */
+    private static String mediaSummary(Context ctx, AttemptRecord r) {
+        int photos = r.photoPaths.size();
+        if (photos > 0) {
+            String photoText = ctx.getResources().getQuantityString(
+                    R.plurals.media_summary_photos, photos, photos);
+            return r.hasVideo()
+                    ? ctx.getString(R.string.media_summary_with_video, photoText)
+                    : photoText;
+        }
+        return r.hasVideo()
+                ? ctx.getString(R.string.media_summary_video_only)
+                : ctx.getString(R.string.media_summary_empty);
+    }
+
     static Bitmap decodeThumb(String path, int reqW, int reqH) {
         File f = new File(path);
         if (!f.exists()) return null;
