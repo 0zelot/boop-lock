@@ -73,10 +73,10 @@ public class NotificationHelper {
      * or blocked channel), sets the hasUnseenAlert flag in Prefs so that
      * MainActivity displays an in-app banner on next open.
      */
-    public static void postAlert(Context ctx, int failedCount, long recordId) {
+    public static void postAlert(Context ctx, long recordId) {
         ensureChannels(ctx);
 
-        DebugLog.i(ctx, "NotificationHelper: postAlert START failed=" + failedCount + " recordId=" + recordId);
+        DebugLog.i(ctx, "NotificationHelper: postAlert START recordId=" + recordId);
 
         // Step 1: POST_NOTIFICATIONS permission (Android 13+/API 33+).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -85,7 +85,7 @@ public class NotificationHelper {
                     == PackageManager.PERMISSION_GRANTED;
             if (!hasPermission) {
                 DebugLog.e(ctx, "NotificationHelper: BLOCKED - POST_NOTIFICATIONS permission missing");
-                markUnseenAlert(ctx, failedCount, recordId);
+                markUnseenAlert(ctx, recordId);
                 return;
             }
             DebugLog.i(ctx, "NotificationHelper: POST_NOTIFICATIONS OK");
@@ -94,7 +94,7 @@ public class NotificationHelper {
         // Step 2: notifications enabled at the app level.
         if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) {
             DebugLog.e(ctx, "NotificationHelper: BLOCKED - notifications disabled for app");
-            markUnseenAlert(ctx, failedCount, recordId);
+            markUnseenAlert(ctx, recordId);
             return;
         }
         DebugLog.i(ctx, "NotificationHelper: areNotificationsEnabled OK");
@@ -108,22 +108,22 @@ public class NotificationHelper {
                     DebugLog.w(ctx, "NotificationHelper: ALERT channel does not exist - creating");
                     ensureChannels(ctx);
                 } else {
-                    DebugLog.i(ctx, "NotificationHelper: kanal ALERT importance=" + ch.getImportance());
+                    DebugLog.i(ctx, "NotificationHelper: ALERT channel importance=" + ch.getImportance());
                     if (ch.getImportance() == NotificationManager.IMPORTANCE_NONE) {
                         DebugLog.e(ctx, "NotificationHelper: BLOCKED - ALERT channel blocked by user");
-                        markUnseenAlert(ctx, failedCount, recordId);
+                        markUnseenAlert(ctx, recordId);
                         return;
                     }
                 }
             }
         }
 
-        doNotify(ctx, failedCount, recordId);
+        doNotify(ctx, recordId);
         DebugLog.i(ctx, "NotificationHelper: nm.notify() called - notification should be visible");
         Prefs.get(ctx).clearUnseenAlert();
     }
 
-    private static void doNotify(Context ctx, int failedCount, long recordId) {
+    private static void doNotify(Context ctx, long recordId) {
         NotificationManager nm = ctx.getSystemService(NotificationManager.class);
         if (nm == null) return;
 
@@ -138,7 +138,7 @@ public class NotificationHelper {
 
         Notification n = new NotificationCompat.Builder(ctx, CHANNEL_ALERT)
                 .setContentTitle(ctx.getString(R.string.alert_title))
-                .setContentText(ctx.getString(R.string.alert_text_fmt, failedCount))
+                .setContentText(ctx.getString(R.string.alert_text_fmt))
                 .setSmallIcon(R.drawable.ic_notification_alert)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -147,12 +147,12 @@ public class NotificationHelper {
                 .build();
 
         nm.notify(NOTIF_ALERT_ID, n);
-        Log.i(TAG, "Alert notification posted (failed=" + failedCount + " recordId=" + recordId + ")");
+        Log.i(TAG, "Alert notification posted recordId=" + recordId);
     }
 
     /** Stores unseen alert data for MainActivity to display. */
-    private static void markUnseenAlert(Context ctx, int failedCount, long recordId) {
-        Prefs.get(ctx).setUnseenAlert(failedCount, recordId);
+    private static void markUnseenAlert(Context ctx, long recordId) {
+        Prefs.get(ctx).setUnseenAlert(recordId);
     }
 
     public static void cancelAlert(Context ctx) {

@@ -7,13 +7,15 @@
 
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:fitsSystemWindows="true">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             android:background="?attr/colorPrimary"
+            android:theme="@style/BoopLock.Toolbar"
             app:title="@string/photo_view_title"
             app:titleTextColor="?attr/colorOnPrimary" />
     </com.google.android.material.appbar.AppBarLayout>

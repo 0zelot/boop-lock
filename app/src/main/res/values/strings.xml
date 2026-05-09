@@ -13,10 +13,6 @@
     <!-- List -->
     <string name="empty_title">No attempts detected</string>
     <string name="empty_subtitle">Entries appear here when someone tries to unlock the phone and fails.</string>
-    <plurals name="failed_attempts">
-        <item quantity="one">%d failed attempt</item>
-        <item quantity="other">%d failed attempts</item>
-    </plurals>
     <plurals name="threshold_summary">
         <item quantity="one">After %d failed attempt</item>
         <item quantity="other">After %d failed attempts</item>
@@ -35,7 +31,7 @@
     <string name="perm_btn_battery">Disable optimization</string>
     <string name="perm_need_channel">The alert notification channel is BLOCKED in system settings. This is the most common cause of missing alerts on Samsung One UI. Unblock it to receive notifications.</string>
     <string name="perm_btn_channel">Unblock channel</string>
-    <string name="in_app_alert_fmt">Unlock attempt detected: %s</string>
+    <string name="in_app_alert_fmt">Unlock attempt detected</string>
     <string name="in_app_alert_action">View</string>
 
     <!-- Device admin -->
@@ -50,7 +46,7 @@
     <string name="service_notif_title">BoopLock</string>
     <string name="service_notif_text">Taking photo...</string>
     <string name="alert_title">Unlock attempt</string>
-    <string name="alert_text_fmt">Someone tried to unlock your device (%d attempt/s)!</string>
+    <string name="alert_text_fmt">Someone tried to unlock your device! Tap to view.</string>
 
     <!-- Dialogs -->
     <string name="clear_all_title">Clear history?</string>
@@ -63,7 +59,6 @@
     <!-- Photo view -->
     <string name="photo_content_description">Front camera photo</string>
     <string name="photo_not_found">Entry not found.</string>
-    <string name="photo_meta_fmt">%1$s\n%2$s</string>
 
     <!-- Preferences -->
     <string name="pref_cat_detection">Detection</string>

@@ -83,21 +83,17 @@ public class AttemptAdapter extends RecyclerView.Adapter<AttemptAdapter.VH> {
     class VH extends RecyclerView.ViewHolder {
         final ImageView thumb;
         final TextView dateText;
-        final TextView countText;
         long currentId = -1;
 
         VH(@NonNull View itemView) {
             super(itemView);
             thumb = itemView.findViewById(R.id.thumb);
             dateText = itemView.findViewById(R.id.date_text);
-            countText = itemView.findViewById(R.id.count_text);
         }
 
         void bind(AttemptRecord r) {
             currentId = r.id;
             dateText.setText(DATE_FMT.format(new Date(r.timestampMs)));
-            countText.setText(itemView.getResources().getQuantityString(
-                    R.plurals.failed_attempts, r.failedCount, r.failedCount));
             thumb.setImageResource(R.drawable.ic_thumb_placeholder);
             itemView.setOnClickListener(v -> {
                 if (clickListener != null) clickListener.onClick(r);

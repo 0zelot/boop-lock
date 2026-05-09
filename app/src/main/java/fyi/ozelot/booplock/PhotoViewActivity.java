@@ -15,6 +15,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.exifinterface.media.ExifInterface;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -66,6 +68,14 @@ public class PhotoViewActivity extends AppCompatActivity {
         TextView meta = findViewById(R.id.meta);
         View progress = findViewById(R.id.progress);
 
+        int metaInitialBottom = meta.getPaddingBottom();
+        ViewCompat.setOnApplyWindowInsetsListener(meta, (v, insets) -> {
+            int navBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+            v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(),
+                    metaInitialBottom + navBottom);
+            return insets;
+        });
+
         AttemptRecord rec = storage.findById(recordId);
         if (rec == null) {
             meta.setText(R.string.photo_not_found);
@@ -73,10 +83,7 @@ public class PhotoViewActivity extends AppCompatActivity {
             return;
         }
 
-        meta.setText(getString(R.string.photo_meta_fmt,
-                DATE_FMT.format(new Date(rec.timestampMs)),
-                getResources().getQuantityString(
-                        R.plurals.failed_attempts, rec.failedCount, rec.failedCount)));
+        meta.setText(DATE_FMT.format(new Date(rec.timestampMs)));
 
         if (rec.photoPath == null) {
             progress.setVisibility(View.GONE);

@@ -36,7 +36,6 @@ public class Prefs {
     private static final String KEY_CYCLE_LAST_RECORD_ID = "cycle_last_record_id";
 
     // In-app alert: used when push could not be delivered (missing permission / blocked channel).
-    private static final String KEY_UNSEEN_ALERT_COUNT   = "unseen_alert_count";
     private static final String KEY_UNSEEN_ALERT_RECORD  = "unseen_alert_record";
 
     private static final int DEFAULT_THRESHOLD = 1;
@@ -134,19 +133,14 @@ public class Prefs {
 
     // --- In-app alert (fallback when push could not be delivered) ---
 
-    public void setUnseenAlert(int failedCount, long recordId) {
+    public void setUnseenAlert(long recordId) {
         sp.edit()
-                .putInt(KEY_UNSEEN_ALERT_COUNT, failedCount)
                 .putLong(KEY_UNSEEN_ALERT_RECORD, recordId)
                 .apply();
     }
 
     public boolean hasUnseenAlert() {
-        return sp.contains(KEY_UNSEEN_ALERT_COUNT);
-    }
-
-    public int getUnseenAlertCount() {
-        return sp.getInt(KEY_UNSEEN_ALERT_COUNT, 0);
+        return sp.contains(KEY_UNSEEN_ALERT_RECORD);
     }
 
     public long getUnseenAlertRecord() {
@@ -155,7 +149,6 @@ public class Prefs {
 
     public void clearUnseenAlert() {
         sp.edit()
-                .remove(KEY_UNSEEN_ALERT_COUNT)
                 .remove(KEY_UNSEEN_ALERT_RECORD)
                 .apply();
     }

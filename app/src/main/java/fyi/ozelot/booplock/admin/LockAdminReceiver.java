@@ -41,12 +41,18 @@ public class LockAdminReceiver extends DeviceAdminReceiver {
         int failedInCycle = prefs.incrementCurrentFailedCount();
         int threshold = prefs.getThreshold();
         boolean alreadyTriggered = prefs.isCaptureTriggeredInCycle();
+        boolean captureComplete = prefs.isCaptureCompleteInCycle();
 
         DebugLog.i(context, "AdminReceiver: onPasswordFailed #" + failedInCycle
                 + " threshold=" + threshold
-                + " alreadyTriggered=" + alreadyTriggered);
+                + " alreadyTriggered=" + alreadyTriggered
+                + " captureComplete=" + captureComplete);
 
-        if (failedInCycle >= threshold && !alreadyTriggered) {
+        if (alreadyTriggered && !captureComplete) {
+            // Service was started but killed before completing — retry.
+            DebugLog.w(context, "AdminReceiver: previous capture incomplete (service killed?), retrying");
+            startCaptureService(context, failedInCycle);
+        } else if (failedInCycle >= threshold && !alreadyTriggered) {
             prefs.setCaptureTriggeredInCycle(true);
             DebugLog.i(context, "AdminReceiver: threshold reached, starting CaptureService");
             startCaptureService(context, failedInCycle);

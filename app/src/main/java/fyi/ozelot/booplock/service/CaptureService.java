@@ -258,7 +258,7 @@ public class CaptureService extends Service {
             // onPasswordSucceeded and USER_PRESENT remain as backup for cycle reset.
             if (notifEnabled) {
                 DebugLog.i(this, "CaptureService: sending notification IMMEDIATELY");
-                NotificationHelper.postAlert(this, failedCount, rec.id);
+                NotificationHelper.postAlert(this, rec.id);
             } else {
                 DebugLog.w(this, "CaptureService: notifications disabled in settings");
             }

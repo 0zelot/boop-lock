@@ -6,4 +6,9 @@
     </style>
 
     <style name="Theme.BoopLock" parent="Base.Theme.BoopLock" />
+
+    <style name="BoopLock.Toolbar" parent="ThemeOverlay.AppCompat.ActionBar">
+        <item name="colorControlNormal">?attr/colorOnPrimary</item>
+        <item name="android:colorControlNormal">?attr/colorOnPrimary</item>
+    </style>
 </resources>

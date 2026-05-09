@@ -11,6 +11,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.snackbar.Snackbar;
@@ -33,6 +35,11 @@ public class DebugActivity extends AppCompatActivity {
 
         logView = findViewById(R.id.log_text);
         scroll = findViewById(R.id.scroll);
+        ViewCompat.setOnApplyWindowInsetsListener(scroll, (v, insets) -> {
+            int navBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+            v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(), navBottom);
+            return insets;
+        });
 
         MaterialButton clearBtn = findViewById(R.id.btn_clear);
         clearBtn.setOnClickListener(v -> {

@@ -24,6 +24,8 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -85,6 +87,14 @@ public class MainActivity extends AppCompatActivity {
         permissionPanelText = findViewById(R.id.permission_panel_text);
         permissionPanelButton = findViewById(R.id.permission_panel_button);
 
+        int recyclerInitialBottom = recycler.getPaddingBottom();
+        ViewCompat.setOnApplyWindowInsetsListener(recycler, (v, insets) -> {
+            int navBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+            v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(),
+                    recyclerInitialBottom + navBottom);
+            return insets;
+        });
+
         adapter = new AttemptAdapter(record -> {
             Intent i = new Intent(MainActivity.this, PhotoViewActivity.class);
             i.putExtra(PhotoViewActivity.EXTRA_RECORD_ID, record.id);
@@ -128,21 +138,18 @@ public class MainActivity extends AppCompatActivity {
         // In-app alert: push was not delivered (missing permission / blocked channel).
         // Show a Snackbar with a button to navigate to the entry.
         if (prefs.hasUnseenAlert()) {
-            int count = prefs.getUnseenAlertCount();
             long recordId = prefs.getUnseenAlertRecord();
             prefs.clearUnseenAlert();
-            showInAppAlert(count, recordId);
+            showInAppAlert(recordId);
         }
 
         refreshList();
         updatePermissionPanel();
     }
 
-    private void showInAppAlert(int failedCount, long recordId) {
-        String msg = getResources().getQuantityString(
-                R.plurals.failed_attempts, failedCount, failedCount);
+    private void showInAppAlert(long recordId) {
         Snackbar sb = Snackbar.make(recycler,
-                getString(R.string.in_app_alert_fmt, msg),
+                getString(R.string.in_app_alert_fmt),
                 Snackbar.LENGTH_LONG);
         if (recordId > 0) {
             sb.setAction(R.string.in_app_alert_action, v -> {

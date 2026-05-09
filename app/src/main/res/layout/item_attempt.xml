@@ -41,15 +41,6 @@
                 android:layout_height="wrap_content"
                 android:textAppearance="?attr/textAppearanceTitleSmall"
                 tools:text="2026-05-09 14:32:11" />
-
-            <TextView
-                android:id="@+id/count_text"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textAppearance="?attr/textAppearanceBodyMedium"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                tools:text="3 nieudane proby" />
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
