@@ -8,3 +8,4 @@ local.properties
 *.aab
 .android
 release.jks
+keystore.properties
