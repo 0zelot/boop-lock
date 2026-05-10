@@ -111,7 +111,7 @@
              successfully unlocks the device (including biometrics). -->
         <receiver
             android:name=".receiver.UnlockReceiver"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.USER_PRESENT" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
