@@ -74,6 +74,14 @@
     <string name="attempt_location_fmt">Location: %1$s</string>
     <string name="attempt_location_accuracy_fmt">Location: %1$s (~%2$.0fm)</string>
     <string name="attempt_location_maps_fmt">Maps: %1$s</string>
+    <string name="btn_open_maps">Open in Maps</string>
+
+    <!-- Biometric lock -->
+    <string name="pref_cat_security">Security</string>
+    <string name="pref_biometric_title">Biometric &amp; PIN lock</string>
+    <string name="pref_biometric_summary">Require authentication each time the app is opened</string>
+    <string name="biometric_prompt_title">Unlock BoopLock</string>
+    <string name="biometric_lock_btn">Authenticate</string>
 
     <!-- Preferences -->
     <string name="pref_cat_detection">Detection</string>

@@ -3,7 +3,7 @@ package fyi.ozelot.booplock;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
-import android.text.method.LinkMovementMethod;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -28,6 +28,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.PagerSnapHelper;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.File;
@@ -64,6 +65,7 @@ public class PhotoViewActivity extends AppCompatActivity {
     private AttemptRecord rec;
     private List<MediaPage> pages = new ArrayList<>();
     private TextView meta;
+    private MaterialButton mapsButton;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -79,13 +81,14 @@ public class PhotoViewActivity extends AppCompatActivity {
         recordId = getIntent().getLongExtra(EXTRA_RECORD_ID, -1L);
         storage = new AttemptStorage(this);
         meta = findViewById(R.id.meta);
-        meta.setMovementMethod(LinkMovementMethod.getInstance());
+        mapsButton = findViewById(R.id.maps_button);
 
-        int metaInitialBottom = meta.getPaddingBottom();
-        ViewCompat.setOnApplyWindowInsetsListener(meta, (v, insets) -> {
+        View metaContainer = findViewById(R.id.meta_container);
+        int containerInitialBottom = metaContainer.getPaddingBottom();
+        ViewCompat.setOnApplyWindowInsetsListener(metaContainer, (v, insets) -> {
             int navBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
             v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(),
-                    metaInitialBottom + navBottom);
+                    containerInitialBottom + navBottom);
             return insets;
         });
 
@@ -123,6 +126,18 @@ public class PhotoViewActivity extends AppCompatActivity {
 
     private void updateMeta(int photoIndex) {
         meta.setText(buildMetaText(photoIndex));
+
+        if (rec.hasLocation()) {
+            String url = rec.location.mapsUrl();
+            mapsButton.setVisibility(View.VISIBLE);
+            mapsButton.setOnClickListener(v -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                } catch (Exception ignored) { }
+            });
+        } else {
+            mapsButton.setVisibility(View.GONE);
+        }
     }
 
     private String buildMetaText(int photoIndex) {
@@ -138,8 +153,6 @@ public class PhotoViewActivity extends AppCompatActivity {
                     rec.location.coordinates(), rec.location.accuracyMeters)
                     : getString(R.string.attempt_location_fmt, rec.location.coordinates());
             out.append('\n').append(locationText);
-            out.append('\n').append(getString(R.string.attempt_location_maps_fmt,
-                    rec.location.mapsUrl()));
         }
         return out.toString();
     }

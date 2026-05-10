@@ -36,6 +36,7 @@ public class Prefs {
     public static final String KEY_EMAIL_PASSWORD = "pref_email_password";
     public static final String KEY_EMAIL_TO = "pref_email_to";
     public static final String KEY_EMAIL_TEST = "pref_email_test";
+    public static final String KEY_BIOMETRIC_ENABLED = "pref_biometric_enabled";
 
     private static final String KEY_CYCLE_FAILED_COUNT = "cycle_failed_count";
     private static final String KEY_CYCLE_CAPTURE_TRIGGERED = "cycle_capture_triggered";
@@ -98,6 +99,10 @@ public class Prefs {
 
     public boolean isEmailEnabled() {
         return sp.getBoolean(KEY_EMAIL_ENABLED, false);
+    }
+
+    public boolean isBiometricEnabled() {
+        return sp.getBoolean(KEY_BIOMETRIC_ENABLED, false);
     }
 
     public String getEmailSmtpHost() {

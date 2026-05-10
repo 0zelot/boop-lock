@@ -3,6 +3,16 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory
+        android:title="@string/pref_cat_security">
+
+        <SwitchPreferenceCompat
+            android:key="pref_biometric_enabled"
+            android:title="@string/pref_biometric_title"
+            android:summary="@string/pref_biometric_summary"
+            android:defaultValue="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
         android:title="@string/pref_cat_detection">
 
         <EditTextPreference

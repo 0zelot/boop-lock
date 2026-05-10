@@ -40,6 +40,7 @@ import fyi.ozelot.booplock.data.AttemptStorage;
 import fyi.ozelot.booplock.data.Prefs;
 import fyi.ozelot.booplock.location.LocationCapture;
 import fyi.ozelot.booplock.notify.NotificationHelper;
+import fyi.ozelot.booplock.security.BiometricHelper;
 import fyi.ozelot.booplock.ui.AttemptAdapter;
 
 /**
@@ -67,6 +68,10 @@ public class MainActivity extends AppCompatActivity {
 
     private AttemptStorage storage;
     private AttemptAdapter adapter;
+
+    private View lockOverlay;
+    private MaterialButton lockRetryButton;
+    private boolean promptShowing = false;
 
     private ActivityResultLauncher<String> requestCameraLauncher;
     private ActivityResultLauncher<String> requestAudioLauncher;
@@ -130,6 +135,13 @@ public class MainActivity extends AppCompatActivity {
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> updatePermissionPanel());
 
+        lockOverlay = findViewById(R.id.lock_overlay);
+        lockRetryButton = findViewById(R.id.lock_retry_button);
+        lockRetryButton.setOnClickListener(v -> {
+            lockRetryButton.setVisibility(View.GONE);
+            showBiometricPrompt();
+        });
+
         NotificationHelper.cancelAlert(this);
         NotificationHelper.ensureChannels(this);
     }
@@ -137,6 +149,42 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+
+        if (!App.get(this).isAuthenticated() && Prefs.get(this).isBiometricEnabled()) {
+            lockOverlay.setVisibility(View.VISIBLE);
+            if (!promptShowing && BiometricHelper.isAvailable(this)) {
+                showBiometricPrompt();
+            } else if (!BiometricHelper.isAvailable(this)) {
+                // No screen lock configured — proceed without auth.
+                doResume();
+            }
+            return;
+        }
+
+        doResume();
+    }
+
+    private void showBiometricPrompt() {
+        promptShowing = true;
+        BiometricHelper.prompt(this, getString(R.string.biometric_prompt_title),
+                new BiometricHelper.Callback() {
+                    @Override
+                    public void onAuthenticated() {
+                        promptShowing = false;
+                        doResume();
+                    }
+
+                    @Override
+                    public void onError() {
+                        promptShowing = false;
+                        lockRetryButton.setVisibility(View.VISIBLE);
+                    }
+                });
+    }
+
+    private void doResume() {
+        App.get(this).setAuthenticated(true);
+        lockOverlay.setVisibility(View.GONE);
 
         Prefs prefs = Prefs.get(this);
 
@@ -156,6 +204,14 @@ public class MainActivity extends AppCompatActivity {
 
         refreshList();
         updatePermissionPanel();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (!isChangingConfigurations()) {
+            promptShowing = false;
+        }
     }
 
     private void showInAppAlert(long recordId) {
